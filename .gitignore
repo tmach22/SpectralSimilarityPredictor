@@ -1,0 +1,7 @@
+./spectra_pairs
+__pycache__/
+*.pyc
+data_splits/
+logs/
+spectra_pairs/
+y/
