@@ -1,190 +1,88 @@
 import torch
 import torch.nn as nn
-import argparse
-import pandas as pd
-from rdkit import Chem
-from torch.utils.data import Dataset, DataLoader
 import pickle
-from pathlib import Path
-import os
-import sys
-cwd = Path.cwd()
-
-data_loader_dir = os.path.join(cwd, 'data_loaders')
-print(f"Adding {data_loader_dir} to sys.path")
-sys.path.insert(0, data_loader_dir)
-
-# --- Assume your finalized DataLoader script is named 'data_loader.py' ---
-from data_loader import SpectralPairDataset, collate_fn
-
-# --- Step 1: Define the Actual MassFormer Encoder Architecture ---
-
-class GraphormerLayer(nn.Module):
-    """
-    A single layer of the Graphormer/MassFormer encoder, containing the
-    multi-head self-attention and feed-forward network components.
-    """
-    def __init__(self, embedding_dim, num_heads, dropout=0.1):
-        super().__init__()
-        self.attention = nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout, batch_first=True)
-        self.norm1 = nn.LayerNorm(embedding_dim)
-        self.norm2 = nn.LayerNorm(embedding_dim)
-        self.dropout = nn.Dropout(dropout)
-        self.ffn = nn.Sequential(
-            nn.Linear(embedding_dim, embedding_dim * 4),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(embedding_dim * 4, embedding_dim)
-        )
-
-    def forward(self, x, attn_bias=None):
-        # x shape: [batch_size, num_atoms, embedding_dim]
-        # In a full implementation, attn_bias would be used to inject graph structure info
-        attn_output, _ = self.attention(x, x, x, attn_mask=attn_bias, need_weights=False)
-        x = x + self.dropout(attn_output)
-        x = self.norm1(x)
-        
-        ffn_output = self.ffn(x)
-        x = x + self.dropout(ffn_output)
-        x = self.norm2(x)
-        
-        return x
+from massformer.massformer import MassFormer
+from massformer.args import train_args
 
 class MassFormerEncoder(nn.Module):
     """
-    The MassFormer encoder, based on the Graphormer architecture.
-    This module converts a batch of molecular graphs into a batch of embedding vectors.
+    Performs the "head-ectomy" on the pre-trained MassFormer model.
+    It accepts a batch dictionary from the collator and returns a graph embedding.
     """
-    def __init__(self, num_layers=12, embedding_dim=768, num_heads=12,
-                 atom_feature_dim=148, bond_feature_dim=21):
+    def __init__(self, config_path: str, checkpoint_path: str):
         super().__init__()
-        self.embedding_dim = embedding_dim
+        args = train_args()
+        args.load(config_path)
+        self.full_massformer_model = MassFormer(args.model)
 
-        self.atom_encoder = nn.Linear(atom_feature_dim, embedding_dim)
-        self.edge_encoder = nn.Linear(bond_feature_dim, num_heads)
-        self.readout_embedding = nn.Parameter(torch.randn(1, 1, embedding_dim))
-        self.layers = nn.ModuleList([GraphormerLayer(embedding_dim, num_heads) for _ in range(num_layers)])
-
-    def forward(self, graph_batch):
-        batch_embeddings = []
-        for graph in graph_batch:
-            node_features = graph['node_features'].to(self.readout_embedding.device)
-            atom_embeddings = self.atom_encoder(node_features)
-            full_embeddings = torch.cat([self.readout_embedding.squeeze(0), atom_embeddings], dim=0)
-            x = full_embeddings.unsqueeze(0)
-
-            for layer in self.layers:
-                x = layer(x)
-
-            graph_embedding = x[:, 0, :] # Select the readout node's embedding
-            batch_embeddings.append(graph_embedding)
-            
-        return torch.cat(batch_embeddings, dim=0)
-
-def load_actual_pretrained_encoder(checkpoint_path: str):
-    """
-    Loads the MassFormer architecture and populates it with the official
-    pre-trained weights from the demo.pkl checkpoint file.
-    """
-    print("Initializing MassFormer encoder architecture...")
-    
-    encoder = MassFormerEncoder(
-        num_layers=12,
-        embedding_dim=768,
-        num_heads=12,
-        atom_feature_dim=148,
-        bond_feature_dim=21
-    )
-
-    print(f"Loading pre-trained weights from: {checkpoint_path}")
-    try:
-        with open(checkpoint_path, 'rb') as f:
-            full_model_state_dict = pickle.load(f)
-            print(f"Checkpoint keys: {list(full_model_state_dict.keys())[:5]} ...")
-            
-        # The original model's encoder is named 'transformer'. We need to extract
-        # only the weights for this part and remove the prefix.
-        encoder_state_dict = {
-            k.replace('transformer.', ''): v 
-            for k, v in full_model_state_dict.items() 
-            if k.startswith('transformer.')
-        }
-
-        encoder.load_state_dict(encoder_state_dict)
-        print("Successfully loaded pre-trained weights into the encoder.")
+        with open(checkpoint_path, "rb") as f:
+            state_dict = pickle.load(f)["state_dict"]
         
-    except FileNotFoundError:
-        print(f"WARNING: Checkpoint file not found at {checkpoint_path}. Using randomly initialized encoder.")
-    except Exception as e:
-        print(f"An error occurred while loading weights: {e}. Using randomly initialized encoder.")
+        state_dict = {k.replace("model.", ""): v for k, v in state_dict.items()}
+        self.full_massformer_model.load_state_dict(state_dict)
+        self.full_massformer_model.eval() # Set to evaluation mode
+
+    def forward(self, batch_dict: dict) -> torch.Tensor:
+        """
+        The forward pass now accepts the dictionary of padded tensors.
+        """
+        # The original MassFormer model's forward pass takes the batch dictionary
+        # directly as input. We will call it to get the node embeddings.
+        # This is the main part of the encoder.
+        node_embeddings = self.full_massformer_model.encoder(batch_dict)
         
-    return encoder
+        # The pooling layer needs the node embeddings and a way to distinguish
+        # the nodes of each graph in the batch. We can create a batch index tensor.
+        num_graphs = node_embeddings.size(0)
+        num_nodes_per_graph = node_embeddings.size(1)
+        batch_index = torch.arange(num_graphs, device=node_embeddings.device).repeat_interleave(num_nodes_per_graph)
+        
+        # Flatten the node embeddings for the pooling layer
+        node_embeddings_flat = node_embeddings.view(-1, node_embeddings.size(-1))
 
-# --- Step 2: The Siamese Network Model Architecture ---
+        # Apply the readout/pooling function to get a single graph-level embedding
+        graph_embedding = self.full_massformer_model.pool(node_embeddings_flat, batch_index)
+        
+        return graph_embedding
 
-class SiameseSimilarityPredictor(nn.Module):
-    def __init__(self, pretrained_encoder):
+class SimilarityHead(nn.Module):
+    """
+    An MLP that takes the combined embeddings and predicts the similarity score.
+    """
+    def __init__(self, embedding_dim=512, hidden_dim=256):
         super().__init__()
-        self.encoder = pretrained_encoder
-        self.embedding_dim = self.encoder.embedding_dim
-        
-        self.regressor = nn.Sequential(
-            nn.Linear(self.embedding_dim * 3, 512),
-            nn.GELU(),
-            nn.Dropout(0.3),
-            nn.Linear(512, 256),
-            nn.GELU(),
-            nn.Dropout(0.3),
-            nn.Linear(256, 1)
-        )
+        self.fc1 = nn.Linear(embedding_dim, hidden_dim)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(hidden_dim, 1)
+        self.sigmoid = nn.Sigmoid() # To constrain output between 0 and 1
 
-    def forward(self, graph_a_batch, graph_b_batch):
-        embedding_a = self.encoder(graph_a_batch)
-        embedding_b = self.encoder(graph_b_batch)
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        x = self.sigmoid(x)
+        return x.squeeze(-1) # Remove the last dimension
+
+class SiameseSpectralSimilarityModel(nn.Module):
+    """
+    The complete Siamese network.
+    """
+    def __init__(self, config_path, checkpoint_path, embedding_dim=512):
+        super().__init__()
+        # A single instance of the encoder is created and shared.
+        self.encoder = MassFormerEncoder(config_path, checkpoint_path)
+        self.similarity_head = SimilarityHead(embedding_dim)
+
+    def forward(self, batch_A, batch_B):
+        # The SAME encoder instance is called on both inputs.
+        embedding_A = self.encoder(batch_A)
+        embedding_B = self.encoder(batch_B)
         
-        diff = torch.abs(embedding_a - embedding_b)
-        fused_vector = torch.cat([embedding_a, embedding_b, diff], dim=1)
+        # Combine embeddings by taking the absolute difference.
+        # This forces the model to learn a distance metric.
+        combined_embedding = torch.abs(embedding_A - embedding_B)
         
-        predicted_similarity = self.regressor(fused_vector).squeeze(-1)
+        # Pass the combined embedding to the similarity head
+        predicted_similarity = self.similarity_head(combined_embedding)
+        
         return predicted_similarity
-
-# --- Example Usage ---
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Build and test the Siamese Network model with pre-trained weights.")
-    parser.add_argument("--checkpoint_path", type=str, required=True, help="Path to the downloaded demo.pkl checkpoint file.")
-    parser.add_argument("--test_split_path", type=str, required=True, help="Path to a data split feather file (e.g., validation_pairs.feather).")
-    args = parser.parse_args()
-    
-    print(f"\n--- Loading Pre-trained Encoder from {os.path.basename(args.checkpoint_path)} ---")
-    print(f"--- Testing with Data Split: {os.path.basename(args.test_split_path)} ---")
-
-    # 1. Load the pre-trained encoder
-    massformer_encoder = load_actual_pretrained_encoder(args.checkpoint_path)
-    
-    # # 2. Instantiate the full Siamese model
-    # model = SiameseSimilarityPredictor(pretrained_encoder=massformer_encoder)
-    
-    # print("\n--- Model Ready for Training ---")
-    # print(f"Total parameters in the Siamese model: {sum(p.numel() for p in model.parameters()):,}")
-    
-    # # 3. Create a DataLoader to get a real batch of data for testing
-    # print(f"\n--- Testing Forward Pass with a real batch from {os.path.basename(args.test_split_path)} ---")
-    # test_dataset = SpectralPairDataset(args.test_split_path, SPECTRA_FILE)
-    # test_loader = DataLoader(test_dataset, batch_size=4, collate_fn=collate_fn)
-    
-    # try:
-    #     graphs_a, graphs_b, ground_truth_scores = next(iter(test_loader))
-        
-    #     if graphs_a:
-    #         with torch.no_grad():
-    #             predictions = model(graphs_a, graphs_b)
-            
-    #         print(f"Input batch size: {len(graphs_a)}")
-    #         print(f"Output predictions shape: {predictions.shape}")
-    #         print(f"Example Predictions: {predictions.numpy()}")
-    #         print(f"Ground Truth Scores: {ground_truth_scores.numpy()}")
-    #     else:
-    #         print("Could not retrieve a valid batch from the DataLoader.")
-            
-    # except StopIteration:
-    #     print("Could not retrieve a batch. The DataLoader is empty.")
