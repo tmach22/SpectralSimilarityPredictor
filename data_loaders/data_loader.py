@@ -78,6 +78,13 @@ class SpectralSimilarityDataset(Dataset):
         # 3. Return the complete triplet.
         return graph_A, graph_B, similarity
 
+# Create a simple collate function for our Siamese task
+def siamese_collate_fn(batch):
+    graphs_A, graphs_B, similarities = zip(*batch)
+    batch_A = collator(graphs_A)
+    batch_B = collator(graphs_B)
+    return batch_A, batch_B, torch.stack(similarities, 0)
+
 # =============================================================================
 # Testing Block: Run this script directly to test the DataLoader
 # =============================================================================
@@ -119,13 +126,6 @@ if __name__ == '__main__':
 
     # --- 3. Test the DataLoader for batching ---
     print("--- Testing DataLoader (batching multiple samples) ---")
-    
-    # Create a simple collate function for our Siamese task
-    def siamese_collate_fn(batch):
-        graphs_A, graphs_B, similarities = zip(*batch)
-        batch_A = collator(graphs_A)
-        batch_B = collator(graphs_B)
-        return batch_A, batch_B, torch.stack(similarities, 0)
 
     siamese_loader = DataLoader(dataset, batch_size=4, shuffle=True, collate_fn=siamese_collate_fn)
     
