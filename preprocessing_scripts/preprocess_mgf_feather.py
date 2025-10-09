@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 
 # Load your spectra dataframe
-msg_df = pd.read_feather('/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/spectra_pairs/msg_df.feather')
+msg_df = pd.read_feather('/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/spectra_pairs/mgf_df_mona.feather')
 
 # Select and rename columns to be more compatible with the MassFormer pipeline's expectations
 # We only need the unique identifier and the structural/adduct information.
