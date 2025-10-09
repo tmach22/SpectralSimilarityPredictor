@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
-from pathlib import Path
-from torch.utils.data import DataLoader
-from scipy.stats import pearsonr
+import torch.optim as optim
+import yaml
 import argparse
+from tqdm import tqdm
+from pathlib import Path
+import copy
 
 import os
 import sys
@@ -17,6 +19,8 @@ model_dir = os.path.join(cwd, 'model')
 print(f"Adding {model_dir} to sys.path")
 sys.path.insert(0, model_dir)
 
+# --- Import our custom classes ---
+# Assuming this script is in the same directory as your model and data loader scripts
 from siamesemodel import SiameseSpectralSimilarityModel
 
 parent_directory = os.path.dirname(cwd.parent)
@@ -26,107 +30,175 @@ print(f"Adding {script_dir} to sys.path")
 # Add the parent directory to the Python path
 sys.path.insert(0, script_dir)
 
-# Import your custom classes
 from data_loader import SpectralSimilarityDataset, siamese_collate_fn
 
+def merge_configs(base_config, custom_config):
+    """
+    Recursively merges the custom config into the base config.
+    """
+    merged_config = copy.deepcopy(base_config)
+    for key, value in custom_config.items():
+        if isinstance(value, dict) and key in merged_config and isinstance(merged_config[key], dict):
+            merged_config[key] = merge_configs(merged_config[key], value)
+        else:
+            merged_config[key] = value
+    return merged_config
 
-def main(args):
-    # --- 1. Configuration from args ---
-    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {DEVICE}")
+def train_model(args):
+    """
+    Main function to orchestrate the model training and validation process.
+    """
+    # --- 1. Setup and Configuration ---
+    print("--- 1. Setting up training environment ---")
+    
+    print(f"Is CUDA available? {torch.cuda.is_available()}")
+    device = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
 
+    # --- CORRECTED CONFIG LOADING ---
+    # Load the base template configuration
+    print(f"Loading template configuration from: {args.template_config_path}")
+    with open(args.template_config_path, 'r') as f:
+        template_config = yaml.safe_load(f)
+
+    # Load the custom experiment configuration
+    print(f"Loading custom configuration from: {args.custom_config_path}")
+    with open(args.custom_config_path, 'r') as f:
+        custom_config = yaml.safe_load(f)
+
+    # Merge the custom config on top of the template
+    full_config = merge_configs(template_config, custom_config)
+    model_config = full_config.get('model', {})
+    
     # --- 2. Data Loading ---
-    print("Setting up DataLoaders...")
-    train_dataset = SpectralSimilarityDataset(args.train_pairs_path, args.spec_data_path, args.mol_data_path)
-    val_dataset = SpectralSimilarityDataset(args.val_pairs_path, args.spec_data_path, args.mol_data_path)
+    print("\n--- 2. Initializing Datasets and DataLoaders ---")
+    
+    train_dataset = SpectralSimilarityDataset(
+        pairs_feather_path=args.train_pairs_path,
+        spec_data_path=args.spec_data_path,
+        mol_data_path=args.mol_data_path,
+        subset_size=args.subset_size
+    )
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset, 
+        batch_size=args.batch_size,
+        shuffle=True, 
+        collate_fn=siamese_collate_fn,
+        num_workers=args.num_workers,
+        pin_memory=True 
+    )
+    print(f"Training dataset contains {len(train_dataset)} pairs.")
 
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=siamese_collate_fn, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=siamese_collate_fn, num_workers=4)
+    val_dataset = SpectralSimilarityDataset(
+        pairs_feather_path=args.val_pairs_path,
+        spec_data_path=args.spec_data_path,
+        mol_data_path=args.mol_data_path,
+        subset_size=args.subset_size
+    )
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset,
+        batch_size=args.batch_size,
+        shuffle=False, 
+        collate_fn=siamese_collate_fn,
+        num_workers=args.num_workers,
+        pin_memory=True
+    )
+    print(f"Validation dataset contains {len(val_dataset)} pairs.")
 
     # --- 3. Model, Loss, and Optimizer ---
-    print("Setting up Model, Loss, and Optimizer...")
-    model = SiameseSpectralSimilarityModel(args.config_path, args.checkpoint_path).to(DEVICE)
-    loss_fn = nn.MSELoss()
+    print("\n--- 3. Initializing Model, Loss Function, and Optimizer ---")
+    
+    model = SiameseSpectralSimilarityModel(
+        model_config=model_config,
+        checkpoint_path=args.checkpoint_path
+    ).to(device)
 
-    # ** CRITICAL: Set up differential learning rates **
-    optimizer = torch.optim.Adam([
-        {'params': model.encoder.parameters(), 'lr': args.lr_encoder},
-        {'params': model.similarity_head.parameters(), 'lr': args.lr_head}
-    ])
+    # --- Freeze the encoder for the first phase ---
+    print("Freezing encoder weights for initial training phase.")
+    for param in model.encoder.parameters():
+        param.requires_grad = False
 
-    # --- 4. Training and Validation Loop ---
+    print(f"Model initialized with {sum(p.numel() for p in model.parameters() if p.requires_grad)} trainable parameters.")
+
+    criterion = nn.MSELoss()
+    optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
+    
+    # --- 4. Training Loop ---
+    print("\n--- 4. Starting Model Training ---")
+    best_val_loss = float('inf')
+
+    early_stopping_patience = args.patience
+    early_stopping_counter = 0
+
     for epoch in range(args.epochs):
         print(f"\n--- Epoch {epoch+1}/{args.epochs} ---")
         
-        # Training
         model.train()
-        total_train_loss = 0
-        for i, (batch_A, batch_B, similarities) in enumerate(train_loader):
-            # Move data to device
-            batch_A = {k: v.to(DEVICE) for k, v in batch_A.items()}
-            batch_B = {k: v.to(DEVICE) for k, v in batch_B.items()}
-            similarities = similarities.to(DEVICE)
-            
-            # Forward pass
-            predictions = model(batch_A, batch_B)
-            
-            # Calculate loss
-            loss = loss_fn(predictions, similarities)
-            total_train_loss += loss.item()
-            
-            # Backward pass and optimization
+        running_train_loss = 0.0
+        for batch_A, batch_B, similarities in tqdm(train_loader, desc="Training"):
+            for key in batch_A: batch_A[key] = batch_A[key].to(device)
+            for key in batch_B: batch_B[key] = batch_B[key].to(device)
+            similarities = similarities.to(device)
             optimizer.zero_grad()
+            predictions = model(batch_A, batch_B)
+            loss = criterion(predictions.squeeze(), similarities)
             loss.backward()
             optimizer.step()
+            running_train_loss += loss.item()
+        avg_train_loss = running_train_loss / len(train_loader)
+        print(f"Average Training Loss: {avg_train_loss:.6f}")
 
-            if (i + 1) % 100 == 0:
-                print(f"  Batch {i+1}/{len(train_loader)}, Current Loss: {loss.item():.6f}")
-            
-        avg_train_loss = total_train_loss / len(train_loader)
-        print(f"Average Training Loss (MSE): {avg_train_loss:.6f}")
-
-        # Validation
         model.eval()
-        total_val_loss = 0
-        all_preds = []
-        all_labels = []
+        running_val_loss = 0.0
         with torch.no_grad():
-            for batch_A, batch_B, similarities in val_loader:
-                batch_A = {k: v.to(DEVICE) for k, v in batch_A.items()}
-                batch_B = {k: v.to(DEVICE) for k, v in batch_B.items()}
-                similarities = similarities.to(DEVICE)
-                
+            for batch_A, batch_B, similarities in tqdm(val_loader, desc="Validating"):
+                for key in batch_A: batch_A[key] = batch_A[key].to(device)
+                for key in batch_B: batch_B[key] = batch_B[key].to(device)
+                similarities = similarities.to(device)
                 predictions = model(batch_A, batch_B)
-                loss = loss_fn(predictions, similarities)
-                total_val_loss += loss.item()
-                
-                all_preds.extend(predictions.cpu().numpy())
-                all_labels.extend(similarities.cpu().numpy())
+                loss = criterion(predictions.squeeze(), similarities)
+                running_val_loss += loss.item()
+        avg_val_loss = running_val_loss / len(val_loader)
+        print(f"Average Validation Loss: {avg_val_loss:.6f}")
 
-        avg_val_loss = total_val_loss / len(val_loader)
-        rmse = (avg_val_loss) ** 0.5
-        pearson_corr, _ = pearsonr(all_labels, all_preds)
-        
-        print(f"Validation RMSE: {rmse:.4f}")
-        print(f"Validation Pearson Correlation: {pearson_corr:.4f}")
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            early_stopping_counter = 0
+            print(f"New best validation loss: {best_val_loss:.6f}. Saving model...")
+            os.makedirs(args.output_dir, exist_ok=True)
+            torch.save(model.state_dict(), os.path.join(args.output_dir, 'best_model.pth'))
+        else:
+            early_stopping_counter += 1
+            print(f"Validation loss did not improve. Early stopping counter: {early_stopping_counter}/{early_stopping_patience}")
+
+        if early_stopping_counter >= early_stopping_patience:
+            print("Early stopping triggered. Terminating training.")
+            break  # Exit the training loop
+
+    print("\n--- Training Complete ---")
+    print(f"Best validation loss achieved: {best_val_loss:.6f}")
 
 if __name__ == '__main__':
-    # --- MODIFICATION: Added argparse for command-line configuration ---
-    parser = argparse.ArgumentParser(description="Train a Siamese MassFormer model for spectral similarity prediction.")
+    parser = argparse.ArgumentParser(description="Train the Siamese Spectral Similarity Model.")
     
-    # Path arguments
-    parser.add_argument("--config_path", type=str, default="/data/nas-gpu/wang/tmach007/massformer/config/demo/demo_eval.yml", help="Path to the MassFormer model config file.")
-    parser.add_argument("--checkpoint_path", type=str, default="/data/nas-gpu/wang/tmach007/massformer/checkpoints/demo.pkl", help="Path to the pre-trained MassFormer weights (.pkl file).")
-    parser.add_argument("--train_pairs_path", type=str, required=True, help="Path to the training pairs feather file.")
-    parser.add_argument("--val_pairs_path", type=str, required=True, help="Path to the validation pairs feather file.")
-    parser.add_argument("--spec_data_path", type=str, default="/data/nas-gpu/wang/tmach007/massformer/data/proc/spec_df.pkl", help="Path to the processed spec_df.pkl file.")
-    parser.add_argument("--mol_data_path", type=str, default="/data/nas-gpu/wang/tmach007/massformer/data/proc/mol_df.pkl", help="Path to the processed mol_df.pkl file.")
+    parser.add_argument("--train_pairs_path", type=str, required=True)
+    parser.add_argument("--val_pairs_path", type=str, required=True)
+    parser.add_argument("--spec_data_path", type=str, required=True)
+    parser.add_argument("--mol_data_path", type=str, required=True)
     
-    # Training hyperparameters
-    parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs.")
-    parser.add_argument("--batch_size", type=int, default=16, help="Batch size for training and validation.")
-    parser.add_argument("--lr_encoder", type=float, default=1e-5, help="Learning rate for the pre-trained encoder.")
-    parser.add_argument("--lr_head", type=float, default=1e-3, help="Learning rate for the new similarity head.")
+    # --- CORRECTED CONFIG PATHS ---
+    parser.add_argument("--template_config_path", type=str, required=True, help="Path to the template.yml config file.")
+    parser.add_argument("--custom_config_path", type=str, required=True, help="Path to the custom experiment config (e.g., demo_eval.yml).")
     
+    parser.add_argument("--checkpoint_path", type=str, required=True)
+    parser.add_argument("--output_dir", type=str, default="./trained_model")
+    parser.add_argument("--learning_rate", type=float, default=1e-6)
+    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--gpu_id", type=int, default=0)
+    parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--subset_size", type=float, default=1.0, help="Fraction of the dataset to use (for quick testing).")
+    parser.add_argument("--patience", type=int, default=3, help="Number of epochs to wait for validation loss improvement before stopping.")
+
     args = parser.parse_args()
-    main(args)
+    train_model(args)
