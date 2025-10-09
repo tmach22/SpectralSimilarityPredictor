@@ -113,7 +113,8 @@ class SimilarityHead(nn.Module):
 
 class SiameseSpectralSimilarityModel(nn.Module):
     """
-    The complete Siamese network for spectral similarity prediction.
+    ABLATION STUDY MODEL:
+    Uses only the element-wise difference of embeddings as input to the head.
     """
     def __init__(self, model_config: dict, checkpoint_path: str):
         super().__init__()
@@ -128,7 +129,7 @@ class SiameseSpectralSimilarityModel(nn.Module):
         #    - embedding_A (size: encoder_embedding_dim)
         #    - embedding_B (size: encoder_embedding_dim)
         #    - |embedding_A - embedding_B| (size: encoder_embedding_dim)
-        similarity_head_input_dim = 3 * encoder_embedding_dim
+        similarity_head_input_dim = encoder_embedding_dim
         
         # 3. Create the similarity prediction head
         self.similarity_head = SimilarityHead(input_dim=similarity_head_input_dim)
@@ -150,13 +151,11 @@ class SiameseSpectralSimilarityModel(nn.Module):
         embedding_A = self.encoder({'gf_v2_data': molecule_A_data})
         embedding_B = self.encoder({'gf_v2_data': molecule_B_data})
 
-        concat_A_B = torch.cat((embedding_A, embedding_B), dim=1)
-        
         # Calculate the element-wise absolute difference
         diff = torch.abs(embedding_A - embedding_B)
         
         # Combine the embeddings for the similarity head
-        combined_vector = torch.cat((concat_A_B, diff), dim=1)
+        combined_vector = diff
         
         # Predict the final score
         score = self.similarity_head(combined_vector)
