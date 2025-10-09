@@ -8,8 +8,8 @@ import os
 
 # --- Configuration ---
 # 1. Input file paths
-SPECTRA_FILE = '/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/spectra_pairs/msg_df.feather'
-PAIRS_FILE = '/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/spectra_pairs/oracle_pairs_all.feather'
+SPECTRA_FILE = '/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/spectra_pairs/mgf_df_mona.feather'
+PAIRS_FILE = '/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/spectra_pairs/oracle_pairs_all_mona.feather'
 
 # 2. Output directory for the final data splits
 OUTPUT_DIRECTORY = '/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/data_splits/'
@@ -99,9 +99,9 @@ train_pairs_df = pairs_df.loc[train_indices]
 validation_pairs_df = pairs_df.loc[validation_indices]
 test_pairs_df = pairs_df.loc[test_indices]
 
-train_pairs_df.to_feather(os.path.join(OUTPUT_DIRECTORY, 'train_pairs.feather'))
-validation_pairs_df.to_feather(os.path.join(OUTPUT_DIRECTORY, 'validation_pairs.feather'))
-test_pairs_df.to_feather(os.path.join(OUTPUT_DIRECTORY, 'test_pairs.feather'))
+train_pairs_df.to_feather(os.path.join(OUTPUT_DIRECTORY, 'train_pairs_mona.feather'))
+validation_pairs_df.to_feather(os.path.join(OUTPUT_DIRECTORY, 'validation_pairs_mona.feather'))
+test_pairs_df.to_feather(os.path.join(OUTPUT_DIRECTORY, 'test_pairs_mona.feather'))
 
 print("\n--- Data Splitting Complete ---")
 print(f"Training pairs: {len(train_pairs_df)}")
