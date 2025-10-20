@@ -4,8 +4,8 @@ import torch.optim as optim
 import yaml
 import argparse
 from tqdm import tqdm
-from pathlib import Path
 import copy
+from pathlib import Path
 
 import os
 import sys
@@ -20,7 +20,6 @@ print(f"Adding {model_dir} to sys.path")
 sys.path.insert(0, model_dir)
 
 # --- Import our custom classes ---
-# Assuming this script is in the same directory as your model and data loader scripts
 from siamesemodel import SiameseSpectralSimilarityModel
 
 parent_directory = os.path.dirname(cwd.parent)
@@ -51,22 +50,18 @@ def train_model(args):
     # --- 1. Setup and Configuration ---
     print("--- 1. Setting up training environment ---")
     
-    print(f"Is CUDA available? {torch.cuda.is_available()}")
-    device = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu")
+    device = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() and args.gpu_id >= 0 else "cpu")
     print(f"Using device: {device}")
 
-    # --- CORRECTED CONFIG LOADING ---
-    # Load the base template configuration
+    # Load configurations
     print(f"Loading template configuration from: {args.template_config_path}")
     with open(args.template_config_path, 'r') as f:
         template_config = yaml.safe_load(f)
 
-    # Load the custom experiment configuration
     print(f"Loading custom configuration from: {args.custom_config_path}")
     with open(args.custom_config_path, 'r') as f:
         custom_config = yaml.safe_load(f)
 
-    # Merge the custom config on top of the template
     full_config = merge_configs(template_config, custom_config)
     model_config = full_config.get('model', {})
     
@@ -80,12 +75,8 @@ def train_model(args):
         subset_size=args.subset_size
     )
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, 
-        batch_size=args.batch_size,
-        shuffle=True, 
-        collate_fn=siamese_collate_fn,
-        num_workers=args.num_workers,
-        pin_memory=True 
+        train_dataset, batch_size=args.batch_size, shuffle=True, 
+        collate_fn=siamese_collate_fn, num_workers=args.num_workers, pin_memory=True
     )
     print(f"Training dataset contains {len(train_dataset)} pairs.")
 
@@ -96,12 +87,8 @@ def train_model(args):
         subset_size=args.subset_size
     )
     val_loader = torch.utils.data.DataLoader(
-        val_dataset,
-        batch_size=args.batch_size,
-        shuffle=False, 
-        collate_fn=siamese_collate_fn,
-        num_workers=args.num_workers,
-        pin_memory=True
+        val_dataset, batch_size=args.batch_size, shuffle=False, 
+        collate_fn=siamese_collate_fn, num_workers=args.num_workers, pin_memory=True
     )
     print(f"Validation dataset contains {len(val_dataset)} pairs.")
 
@@ -111,22 +98,44 @@ def train_model(args):
     model = SiameseSpectralSimilarityModel(
         model_config=model_config,
         checkpoint_path=args.checkpoint_path
-    ).to(device)
+    )
 
-    # --- Freeze the encoder for the first phase ---
-    print("Freezing encoder weights for initial training phase.")
-    for param in model.encoder.parameters():
-        param.requires_grad = False
+    if args.load_from_checkpoint:
+        print(f"\n--- Loading weights from checkpoint for fine-tuning: {args.load_from_checkpoint} ---")
+        model.load_state_dict(torch.load(args.load_from_checkpoint, map_location=device))
+        
+        print("--- Unfreezing encoder for fine-tuning ---")
+        for param in model.encoder.parameters():
+            param.requires_grad = True
 
-    print(f"Model initialized with {sum(p.numel() for p in model.parameters() if p.requires_grad)} trainable parameters.")
+        print(f"Setting up differential learning rates:")
+        print(f"  - Encoder LR: {args.encoder_lr}")
+        print(f"  - Head LR:    {args.head_lr}")
+            
+        optimizer_parameters = [
+            {'params': model.encoder.parameters(), 'lr': args.encoder_lr},
+            {'params': model.similarity_head.parameters(), 'lr': args.head_lr}
+        ]
+    else:
+        print("--- Freezing encoder weights for initial training phase ---")
+        for param in model.encoder.parameters():
+            param.requires_grad = False
+
+    model.to(device)
+    
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Model initialized with {trainable_params:,} trainable parameters.")
 
     criterion = nn.MSELoss()
-    optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
+    optimizer = optim.AdamW(optimizer_parameters)
     
     # --- 4. Training Loop ---
     print("\n--- 4. Starting Model Training ---")
     best_val_loss = float('inf')
-
+    
+    # =============================================================================
+    # *** NEW: Initialize variables for early stopping ***
+    # =============================================================================
     early_stopping_patience = args.patience
     early_stopping_counter = 0
 
@@ -136,13 +145,14 @@ def train_model(args):
         model.train()
         running_train_loss = 0.0
         for batch_A, batch_B, similarities in tqdm(train_loader, desc="Training"):
-            for key in batch_A: batch_A[key] = batch_A[key].to(device)
-            for key in batch_B: batch_B[key] = batch_B[key].to(device)
-            similarities = similarities.to(device)
+            for key in batch_A: batch_A[key] = batch_A[key].to(device, non_blocking=True)
+            for key in batch_B: batch_B[key] = batch_B[key].to(device, non_blocking=True)
+            similarities = similarities.to(device, non_blocking=True)
             optimizer.zero_grad()
             predictions = model(batch_A, batch_B)
             loss = criterion(predictions.squeeze(), similarities)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             running_train_loss += loss.item()
         avg_train_loss = running_train_loss / len(train_loader)
@@ -152,21 +162,25 @@ def train_model(args):
         running_val_loss = 0.0
         with torch.no_grad():
             for batch_A, batch_B, similarities in tqdm(val_loader, desc="Validating"):
-                for key in batch_A: batch_A[key] = batch_A[key].to(device)
-                for key in batch_B: batch_B[key] = batch_B[key].to(device)
-                similarities = similarities.to(device)
+                for key in batch_A: batch_A[key] = batch_A[key].to(device, non_blocking=True)
+                for key in batch_B: batch_B[key] = batch_B[key].to(device, non_blocking=True)
+                similarities = similarities.to(device, non_blocking=True)
                 predictions = model(batch_A, batch_B)
                 loss = criterion(predictions.squeeze(), similarities)
                 running_val_loss += loss.item()
         avg_val_loss = running_val_loss / len(val_loader)
         print(f"Average Validation Loss: {avg_val_loss:.6f}")
 
+        # =============================================================================
+        # *** NEW: Early stopping logic ***
+        # =============================================================================
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            early_stopping_counter = 0
+            early_stopping_counter = 0  # Reset counter on improvement
             print(f"New best validation loss: {best_val_loss:.6f}. Saving model...")
             os.makedirs(args.output_dir, exist_ok=True)
-            torch.save(model.state_dict(), os.path.join(args.output_dir, 'best_model.pth'))
+            save_name = 'best_model_finetuned.pth' if args.load_from_checkpoint else 'best_model.pth'
+            torch.save(model.state_dict(), os.path.join(args.output_dir, save_name))
         else:
             early_stopping_counter += 1
             print(f"Validation loss did not improve. Early stopping counter: {early_stopping_counter}/{early_stopping_patience}")
@@ -179,26 +193,35 @@ def train_model(args):
     print(f"Best validation loss achieved: {best_val_loss:.6f}")
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Train the Siamese Spectral Similarity Model.")
+    parser = argparse.ArgumentParser(description="Train or Fine-tune the Siamese Spectral Similarity Model.")
     
+    # --- Data & Model Paths ---
     parser.add_argument("--train_pairs_path", type=str, required=True)
     parser.add_argument("--val_pairs_path", type=str, required=True)
     parser.add_argument("--spec_data_path", type=str, required=True)
     parser.add_argument("--mol_data_path", type=str, required=True)
-    
-    # --- CORRECTED CONFIG PATHS ---
-    parser.add_argument("--template_config_path", type=str, required=True, help="Path to the template.yml config file.")
-    parser.add_argument("--custom_config_path", type=str, required=True, help="Path to the custom experiment config (e.g., demo_eval.yml).")
-    
-    parser.add_argument("--checkpoint_path", type=str, required=True)
+    parser.add_argument("--template_config_path", type=str, required=True)
+    parser.add_argument("--custom_config_path", type=str, required=True)
+    parser.add_argument("--checkpoint_path", type=str, required=True, help="Path to the original MassFormer checkpoint (demo.pkl).")
     parser.add_argument("--output_dir", type=str, default="./trained_model")
-    parser.add_argument("--learning_rate", type=float, default=1e-6)
+    
+    # --- Training Hyperparameters ---
+    parser.add_argument("--learning_rate", type=float, default=1e-4, help="Initial learning rate (will be overridden for fine-tuning).")
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--subset_size", type=float, default=None)
+
+    # =============================================================================
+    # *** NEW: Add arguments for fine-tuning and early stopping ***
+    # =============================================================================
+    parser.add_argument("--load_from_checkpoint", type=str, default=None, help="Path to a model checkpoint to load for fine-tuning (e.g., best_model.pth).")
+    parser.add_argument("--encoder_lr", type=float, default=1e-6, help="Learning rate for the encoder during fine-tuning.")
+    parser.add_argument("--head_lr", type=float, default=1e-5, help="Learning rate for the similarity head.")
+    parser.add_argument("--patience", type=int, default=3, help="Number of epochs to wait for validation loss improvement before stopping.")
+
+    # --- System Configuration ---
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--subset_size", type=float, default=1.0, help="Fraction of the dataset to use (for quick testing).")
-    parser.add_argument("--patience", type=int, default=3, help="Number of epochs to wait for validation loss improvement before stopping.")
 
     args = parser.parse_args()
     train_model(args)

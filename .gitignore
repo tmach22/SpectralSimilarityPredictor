@@ -5,3 +5,10 @@ data_splits/
 logs/
 spectra_pairs/
 y/
+mass_spec_gym_data/
+baseline_data/
+finetuned_models/
+trained_models/
+contrastive_loss_data/
+results/
+trained_model/

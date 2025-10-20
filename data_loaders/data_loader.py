@@ -24,7 +24,7 @@ class SpectralSimilarityDataset(Dataset):
     spectral similarity score. It uses a two-step lookup to map spectrum IDs
     to their corresponding graph objects.
     """
-    def __init__(self, pairs_feather_path, spec_data_path, mol_data_path):
+    def __init__(self, pairs_feather_path, spec_data_path, mol_data_path, subset_size=None):
         super().__init__()
         print(f"Loading pairs data from {pairs_feather_path}...")
         # This DataFrame contains the instructions (ID_A, ID_B, similarity)
@@ -49,6 +49,19 @@ class SpectralSimilarityDataset(Dataset):
         ].reset_index(drop=True)
         final_pair_count = len(self.pairs_df)
         print(f"Filtering complete. Kept {final_pair_count} of {initial_pair_count} pairs.")
+
+        if subset_size is not None:
+            print(f"--- Using a subset of the data: {subset_size} ---")
+            if isinstance(subset_size, float) and 0 < subset_size <= 1.0:
+                # Interpret as a fraction
+                self.pairs_df = self.pairs_df.sample(frac=subset_size, random_state=42).reset_index(drop=True)
+            elif isinstance(subset_size, int) and subset_size > 0:
+                # Interpret as an absolute number of samples
+                num_samples = min(subset_size, final_pair_count)
+                self.pairs_df = self.pairs_df.sample(n=num_samples, random_state=42).reset_index(drop=True)
+            else:
+                raise ValueError("subset_size must be a float between 0 and 1, or a positive integer.")
+            print(f"New dataset size: {len(self.pairs_df)} pairs.")
 
     def __len__(self):
         # The total number of training examples is the number of pairs.
@@ -94,6 +107,7 @@ if __name__ == '__main__':
     parser.add_argument("--pairs_path", type=str, required=True, help="Path to the feather file.")
     parser.add_argument("--mol_data_path", type=str, required=True, help="Path to the pre-built graph data.")
     parser.add_argument("--spec_data_path", type=str, required=True, help="Path to the spectrum to molecule mapping data.")
+    parser.add_argument("--subset_size", type=float, default=1.0, help="Number of pairs to load for testing.")
     args = parser.parse_args()
     print(f"Args: {args}")
     
@@ -108,7 +122,8 @@ if __name__ == '__main__':
     dataset = SpectralSimilarityDataset(
         pairs_feather_path=args.pairs_path,
         spec_data_path=args.spec_data_path,
-        mol_data_path=args.mol_data_path
+        mol_data_path=args.mol_data_path,
+        subset_size=args.subset_size
     )
     print(f"Dataset initialized successfully. Total number of pairs: {len(dataset)}\n")
 

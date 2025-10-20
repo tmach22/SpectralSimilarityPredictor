@@ -18,9 +18,6 @@ sys.path.insert(0, script_dir)
 from model import Predictor
 from gf_model import GFv2Embedder, set_data_args, set_graphormer_base_architecture_args
 
-from runner import Runner
-from args import train_args
-
 class MassFormerEncoder(nn.Module):
     """
     A wrapper class to isolate the pre-trained MassFormer encoder.
@@ -41,7 +38,7 @@ class MassFormerEncoder(nn.Module):
         # We need to create a dummy 'dim_d' dictionary, as the original
         # Predictor class expects it. The values are not critical since
         # we are not using the prediction head.
-        dim_d = {"g_dim": 20, "o_dim": 1000}
+        dim_d = {"g_dim": 10, "o_dim": 1000}
 
         # 1. Instantiate the full end-to-end Predictor model
         #    This creates the architecture with random weights.
@@ -97,10 +94,10 @@ class SimilarityHead(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(0.4),
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(0.4),
             nn.Linear(hidden_dim // 2, 1)
         )
 
@@ -150,14 +147,16 @@ class SiameseSpectralSimilarityModel(nn.Module):
             torch.Tensor: The predicted similarity score.
         """
         # Generate embeddings for each molecule using the *same* shared encoder
-        embedding_A = self.encoder(molecule_A_data)
-        embedding_B = self.encoder(molecule_B_data)
+        embedding_A = self.encoder({'gf_v2_data': molecule_A_data})
+        embedding_B = self.encoder({'gf_v2_data': molecule_B_data})
+
+        concat_A_B = torch.cat((embedding_A, embedding_B), dim=1)
         
         # Calculate the element-wise absolute difference
         diff = torch.abs(embedding_A - embedding_B)
         
         # Combine the embeddings for the similarity head
-        combined_vector = torch.cat(, dim=1)
+        combined_vector = torch.cat((concat_A_B, diff), dim=1)
         
         # Predict the final score
         score = self.similarity_head(combined_vector)
