@@ -67,7 +67,7 @@ def main():
     args = parser.parse_args()
 
     # --- 1. Setup Device and Load Model ---
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     print(f"\n--- Using device: {device} ---")
 
     if not os.path.exists(args.model_path):

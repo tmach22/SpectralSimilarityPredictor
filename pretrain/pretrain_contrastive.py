@@ -4,6 +4,7 @@ import time
 import pandas as pd
 import yaml
 from tqdm import tqdm
+import copy
 
 import torch
 import torch.nn as nn
@@ -13,6 +14,7 @@ from torch.nn import functional as F
 
 # --- Path setup to import MassFormer modules ---
 from pathlib import Path
+import sys
 cwd = Path.cwd()
 # This assumes your script is run from a directory where the parent contains the 'tmach007' folder
 # Adjust this path if your project structure is different
@@ -35,6 +37,18 @@ sys.path.insert(0, model_dir)
 from data_loader_contrastive import ContrastiveDataset, siamese_collate_fn
 # The MassFormerEncoder from your model file
 from siamesemodel import MassFormerEncoder
+
+def merge_configs(base_config, custom_config):
+    """
+    Recursively merges the custom config into the base config.
+    """
+    merged_config = copy.deepcopy(base_config)
+    for key, value in custom_config.items():
+        if isinstance(value, dict) and key in merged_config and isinstance(merged_config[key], dict):
+            merged_config[key] = merge_configs(merged_config[key], value)
+        else:
+            merged_config[key] = value
+    return merged_config
 
 # --- 1. Siamese Model and Contrastive Loss Definition ---
 
@@ -85,7 +99,8 @@ def main():
     parser.add_argument("--train_pairs_path", type=str, required=True, help="Path to pretrain_contrastive_train.feather.")
     parser.add_argument("--val_pairs_path", type=str, required=True, help="Path to pretrain_contrastive_validation.feather.")
     parser.add_argument("--mol_df_path", type=str, required=True, help="Path to mol_df.pkl.")
-    parser.add_argument("--config_path", type=str, required=True, help="Path to the MassFormer model YAML config file.")
+    parser.add_argument("--template_config_path", type=str, required=True, help="Path to the MassFormer model YAML config file.")
+    parser.add_argument("--custom_config_path", type=str, required=True, help="Path to the custom experiment config (e.g., demo_eval.yml).")
     parser.add_argument("--checkpoint_path", type=str, required=True, help="Path to the official MassFormer weights (e.g., demo.pkl).")
     parser.add_argument("--output_dir", type=str, required=True, help="Directory to save the new pre-trained encoder.")
     
@@ -94,100 +109,107 @@ def main():
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size.")
     parser.add_argument("--learning_rate", type=float, default=1e-5, help="Learning rate.")
     parser.add_argument("--margin", type=float, default=2.0, help="Margin for contrastive loss.")
-    parser.add_argument("--patience", type=int, default=5, help="Early stopping patience.")
-    parser.add_argument("--num_workers", type=int, default=4, help="Number of workers for DataLoader.")
+    parser.add_argument("--patience", type=int, default=3, help="Early stopping patience.")
+    parser.add_argument("--num_workers", type=int, default=8, help="Number of workers for DataLoader.")
     parser.add_argument("--subset_size", type=float, default=None, help="Use a fraction of the dataset for quick testing (e.g., 0.1 for 10%).")
 
     args = parser.parse_args()
 
-    # # --- Setup ---
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # print(f"\n--- Using device: {device} ---")
-    # os.makedirs(args.output_dir, exist_ok=True)
+    # --- Setup ---
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"\n--- Using device: {device} ---")
+    os.makedirs(args.output_dir, exist_ok=True)
 
-    # # --- Data Loading ---
-    # print("\n--- 1. Loading Data ---")
-    # mol_df = pd.read_pickle(args.mol_df_path)
-    # mol_df['mol_id'] = mol_df['mol_id'].astype(int)
+    # --- Data Loading ---
+    print("\n--- 1. Loading Data ---")
+    mol_df = pd.read_pickle(args.mol_df_path)
+    mol_df['mol_id'] = mol_df['mol_id'].astype(int)
     
-    # train_dataset = ContrastiveDataset(args.train_pairs_path, mol_df, subset_size=args.subset_size)
-    # val_dataset = ContrastiveDataset(args.val_pairs_path, mol_df, subset_size=args.subset_size)
+    train_dataset = ContrastiveDataset(args.train_pairs_path, mol_df, subset_size=args.subset_size)
+    val_dataset = ContrastiveDataset(args.val_pairs_path, mol_df, subset_size=args.subset_size)
 
-    # train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, 
-    #                           num_workers=args.num_workers, collate_fn=siamese_collate_fn, pin_memory=True)
-    # val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, 
-    #                         num_workers=args.num_workers, collate_fn=siamese_collate_fn, pin_memory=True)
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, 
+                              num_workers=args.num_workers, collate_fn=siamese_collate_fn, pin_memory=True)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, 
+                            num_workers=args.num_workers, collate_fn=siamese_collate_fn, pin_memory=True)
 
-    # # --- Model Initialization ---
-    # print("\n--- 2. Initializing Model ---")
-    # with open(args.config_path, 'r') as f:
-    #     config = yaml.safe_load(f)
+    # --- Model Initialization ---
+    print("\n--- 2. Initializing Model ---")
+    print(f"Loading template configuration from: {args.template_config_path}")
+    with open(args.template_config_path, 'r') as f:
+        template_config = yaml.safe_load(f)
+
+    with open(args.custom_config_path, 'r') as f:
+        custom_config = yaml.safe_load(f)
+
+    # Merge the custom config on top of the template
+    full_config = merge_configs(template_config, custom_config)
     
-    # model = SiameseMassFormer(config['model'], args.checkpoint_path).to(device)
-    # loss_function = ContrastiveLoss(margin=args.margin)
-    # optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
+    model = SiameseMassFormer(full_config['model'], args.checkpoint_path).to(device)
+    loss_function = ContrastiveLoss(margin=args.margin)
+    optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
     
-    # print(f"Model initialized with {sum(p.numel() for p in model.parameters() if p.requires_grad):,} trainable parameters.")
+    print(f"Model initialized with {sum(p.numel() for p in model.parameters() if p.requires_grad):,} trainable parameters.")
 
-    # # --- Training Loop ---
-    # print("\n--- 3. Starting Pre-training ---")
-    # best_val_loss = float('inf')
-    # patience_counter = 0
-    # encoder_path = os.path.join(args.output_dir, 'massformer_encoder_contrastive_pretrained.pt')
+    # --- Training Loop ---
+    print("\n--- 3. Starting Pre-training ---")
+    best_val_loss = float('inf')
+    patience_counter = 0
+    encoder_path = os.path.join(args.output_dir, 'massformer_encoder_contrastive_pretrained.pt')
 
-    # for epoch in range(args.epochs):
-    #     start_time = time.time()
-    #     model.train()
-    #     total_train_loss = 0
+    for epoch in range(args.epochs):
+        start_time = time.time()
+        model.train()
+        total_train_loss = 0
         
-    #     for mol_a, mol_b, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}"):
-    #         mol_a = {k: v.to(device, non_blocking=True) for k, v in mol_a.items()}
-    #         mol_b = {k: v.to(device, non_blocking=True) for k, v in mol_b.items()}
-    #         labels = labels.to(device, non_blocking=True)
+        for mol_a, mol_b, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}"):
+            mol_a = {k: v.to(device, non_blocking=True) for k, v in mol_a.items()}
+            mol_b = {k: v.to(device, non_blocking=True) for k, v in mol_b.items()}
+            labels = labels.to(device, non_blocking=True)
             
-    #         optimizer.zero_grad()
-    #         output_a, output_b = model(mol_a, mol_b)
-    #         loss = loss_function(output_a, output_b, labels)
-    #         loss.backward()
-    #         optimizer.step()
+            optimizer.zero_grad()
+            output_a, output_b = model(mol_a, mol_b)
+            loss = loss_function(output_a, output_b, labels)
+            loss.backward()
+            optimizer.step()
             
-    #         total_train_loss += loss.item()
+            total_train_loss += loss.item()
 
-    #     avg_train_loss = total_train_loss / len(train_loader)
+        avg_train_loss = total_train_loss / len(train_loader)
 
-    #     # --- Validation Loop ---
-    #     model.eval()
-    #     total_val_loss = 0
-    #     with torch.no_grad():
-    #         for mol_a, mol_b, labels in tqdm(val_loader, desc=f"Epoch {epoch+1}/{args.epochs} [Val]"):
-    #             mol_a = {k: v.to(device, non_blocking=True) for k, v in mol_a.items()}
-    #             mol_b = {k: v.to(device, non_blocking=True) for k, v in mol_b.items()}
-    #             labels = labels.to(device, non_blocking=True)
+        # --- Validation Loop ---
+        model.eval()
+        total_val_loss = 0
+        with torch.no_grad():
+            for mol_a, mol_b, labels in tqdm(val_loader, desc=f"Epoch {epoch+1}/{args.epochs} [Val]"):
+                mol_a = {k: v.to(device, non_blocking=True) for k, v in mol_a.items()}
+                mol_b = {k: v.to(device, non_blocking=True) for k, v in mol_b.items()}
+                labels = labels.to(device, non_blocking=True)
                 
-    #             output_a, output_b = model(mol_a, mol_b)
-    #             loss = loss_function(output_a, output_b, labels)
-    #             total_val_loss += loss.item()
+                output_a, output_b = model(mol_a, mol_b)
+                loss = loss_function(output_a, output_b, labels)
+                total_val_loss += loss.item()
         
-    #     avg_val_loss = total_val_loss / len(val_loader)
-    #     epoch_duration = time.time() - start_time
-    #     print(f"Epoch {epoch+1}: Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}, Duration: {epoch_duration:.2f}s")
+        avg_val_loss = total_val_loss / len(val_loader)
+        epoch_duration = time.time() - start_time
+        print(f"Epoch {epoch+1}: Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}, Duration: {epoch_duration:.2f}s")
 
-    #     # --- Early Stopping and Checkpointing ---
-    #     if avg_val_loss < best_val_loss:
-    #         best_val_loss = avg_val_loss
-    #         patience_counter = 0
-    #         # Save only the state_dict of the encoder
-    #         torch.save(model.encoder.state_dict(), encoder_path)
-    #         print(f"New best model saved to {encoder_path} (Val Loss: {best_val_loss:.6f})")
-    #     else:
-    #         patience_counter += 1
+        # --- Early Stopping and Checkpointing ---
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            patience_counter = 0
+            # Save only the state_dict of the encoder
+            torch.save(model.encoder.state_dict(), encoder_path)
+            print(f"New best model saved to {encoder_path} (Val Loss: {best_val_loss:.6f})")
+        else:
+            patience_counter += 1
         
-    #     if patience_counter >= args.patience:
-    #         print(f"Early stopping triggered after {args.patience} epochs with no improvement.")
-    #         break
+        if patience_counter >= args.patience:
+            print(f"Early stopping triggered after {args.patience} epochs with no improvement.")
+            break
             
-    # print("\n--- Pre-training Complete ---")
-    # print(f"Best pre-trained encoder saved at: {encoder_path}")
+    print("\n--- Pre-training Complete ---")
+    print(f"Best pre-trained encoder saved at: {encoder_path}")
 
 if __name__ == '__main__':
     main()

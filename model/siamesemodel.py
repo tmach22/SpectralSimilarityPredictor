@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import argparse
+from collections import OrderedDict
 from pathlib import Path
 
 import os
@@ -48,9 +49,13 @@ class MassFormerEncoder(nn.Module):
         print(f"Loading pre-trained weights from {checkpoint_path}...")
         state_dict = torch.load(checkpoint_path, map_location="cpu")
         
-        # The weights are stored under the "best_model_sd" key
-        full_model.load_state_dict(state_dict["best_model_sd"])
-        print("Weights loaded successfully.")
+        # The weights are stored under the "best_model_sd" key in some checkpoints,
+        # but in demo.pkl they are at the top level. This handles both cases.
+        if 'best_model_sd' in state_dict:
+            full_model.load_state_dict(state_dict['best_model_sd'])
+        else:
+            full_model.load_state_dict(state_dict)
+        print("Base weights loaded successfully.")
 
         # 3. Isolate the GFv2Embedder
         #    We find the correct embedder from the model's 'embedders' list.
@@ -115,11 +120,35 @@ class SiameseSpectralSimilarityModel(nn.Module):
     """
     The complete Siamese network for spectral similarity prediction.
     """
-    def __init__(self, model_config: dict, checkpoint_path: str):
+    def __init__(self, model_config: dict, checkpoint_path: str, custom_encoder_weights_path: str = None):
         super().__init__()
         
         # 1. Create the shared molecular encoder
         self.encoder = MassFormerEncoder(model_config, checkpoint_path)
+
+        if custom_encoder_weights_path:
+            print(f"Attempting to load custom pre-trained encoder weights from: {custom_encoder_weights_path}")
+            
+            # These weights likely came from saving a model that contained a MassFormerEncoder
+            # as an attribute (e.g., `saved_model.encoder = MassFormerEncoder(...)`).
+            # Therefore, the keys in this state_dict are likely prefixed with 'encoder.encoder...'.
+            custom_weights = torch.load(custom_encoder_weights_path, map_location="cpu")
+            
+            # We are loading these weights into `self.encoder`, which is an instance of MassFormerEncoder.
+            # The state_dict for a MassFormerEncoder instance expects keys prefixed with 'encoder...'
+            # because its internal structure is `self.encoder = GFv2Embedder(...)`.
+            # We must remap the keys from the file to match our target module.
+            new_encoder_state_dict = OrderedDict()
+            for k, v in custom_weights.items():
+                    new_encoder_state_dict[k] = v
+            
+            if not new_encoder_state_dict:
+                 raise KeyError("Could not find any keys with the expected 'encoder.encoder.' prefix in the custom weights file. Please check how the weights were saved.")
+
+            # Load the remapped state dictionary into our MassFormerEncoder module.
+            # We use strict=True because the remapped keys should be a perfect match for this module.
+            self.encoder.load_state_dict(new_encoder_state_dict, strict=True)
+            print("Successfully loaded custom pre-trained weights into the encoder.")
         
         # Get the embedding dimension from the encoder's config
         encoder_embedding_dim = self.encoder.encoder.get_embed_dim()

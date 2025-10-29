@@ -110,7 +110,8 @@ def train_model(args):
     
     model = SiameseSpectralSimilarityModel(
         model_config=model_config,
-        checkpoint_path=args.checkpoint_path
+        checkpoint_path=args.checkpoint_path,
+        custom_encoder_weights_path=args.contrastive_checkpoint_path
     ).to(device)
 
     # --- Freeze the encoder for the first phase ---
@@ -191,6 +192,7 @@ if __name__ == '__main__':
     parser.add_argument("--custom_config_path", type=str, required=True, help="Path to the custom experiment config (e.g., demo_eval.yml).")
     
     parser.add_argument("--checkpoint_path", type=str, required=True)
+    parser.add_argument("--contrastive_checkpoint_path", type=str, default="path contrastive pretraining weights")
     parser.add_argument("--output_dir", type=str, default="./trained_model")
     parser.add_argument("--learning_rate", type=float, default=1e-6)
     parser.add_argument("--epochs", type=int, default=50)
