@@ -40,6 +40,7 @@ def create_paired_metadata(pairs_path, lookup_path, output_path):
         'smiles',
         'adduct',
         'instrument',
+        'morgan_fingerprint',
         'inchikey',
         'formula',
         'precursor_mz',
