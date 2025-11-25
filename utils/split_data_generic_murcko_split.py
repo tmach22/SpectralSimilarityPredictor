@@ -24,8 +24,18 @@ def generate_scaffold_worker(smiles):
     mol = Chem.MolFromSmiles(smiles)
     if mol:
         try:
-            scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol, includeChirality=False)
-            return (scaffold, smiles)
+            scaffold = MurckoScaffold.GetScaffoldForMol(mol)
+
+            # Check if it's a linear molecule (no scaffold)
+            if scaffold.GetNumAtoms() == 0:
+                return ("", smiles)
+            
+            # 3. Convert to a generic scaffold (all atoms -> C, all bonds -> single) 
+            generic_mol = MurckoScaffold.MakeScaffoldGeneric(scaffold)
+
+            # 4. Get the canonical SMILES string for the generic scaffold
+            scaffold_smi = Chem.MolToSmiles(generic_mol)
+            return (scaffold_smi, smiles)
         except ValueError:
             # Handle cases where scaffold generation fails
             return ("", smiles) # Group molecules without scaffolds
@@ -166,9 +176,9 @@ def main(args):
     test_pairs_df = pairs_df.loc[all_test_indices].reset_index(drop=True)
 
     # Define output paths
-    train_path = os.path.join(args.output_dir, os.path.basename(args.pairs_file).replace('.feather', '_train.feather'))
-    val_path = os.path.join(args.output_dir, os.path.basename(args.pairs_file).replace('.feather', '_val.feather'))
-    test_path = os.path.join(args.output_dir, os.path.basename(args.pairs_file).replace('.feather', '_test.feather'))
+    train_path = os.path.join(args.output_dir, os.path.basename(args.pairs_file).replace('.feather', '_generic_train.feather'))
+    val_path = os.path.join(args.output_dir, os.path.basename(args.pairs_file).replace('.feather', '_generic_val.feather'))
+    test_path = os.path.join(args.output_dir, os.path.basename(args.pairs_file).replace('.feather', '_generic_test.feather'))
 
     train_pairs_df.to_feather(train_path)
     validation_pairs_df.to_feather(val_path)

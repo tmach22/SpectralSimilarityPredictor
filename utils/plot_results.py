@@ -39,7 +39,7 @@ def create_stratified_plot(results_path, output_path, title, n_samples_per_bin=1
         # Ensure we don't try to sample more points than available
         num_to_sample = min(n_samples_per_bin, len(bin_df))
         if len(bin_df) > 0:
-            sampled_dfs.append(bin_df.sample(n=num_to_sample, random_state=44))
+            sampled_dfs.append(bin_df.sample(n=num_to_sample, random_state=123))
             # sampled_dfs.append(bin_df.sample(n=num_to_sample, random_state=30))
             print(f" - Sampled {num_to_sample} points from '{name}' (out of {len(bin_df)} available)")
         else:

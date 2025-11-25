@@ -19,7 +19,7 @@ except ImportError:
     print("\n--- FATAL ERROR ---")
     print("Could not import 'eda_utils.py'.")
     print(f"Please make sure 'eda_utils.py' is in the same directory as this script:")
-    print(f"{script_dir}")
+    print(f"{utils_dir}")
     print("-------------------\n")
     sys.exit(1)
 # -----------------------------------------------------------
