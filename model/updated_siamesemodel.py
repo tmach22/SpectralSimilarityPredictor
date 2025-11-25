@@ -48,14 +48,48 @@ class MassFormerEncoder(nn.Module):
         # 2. Load the pre-trained weights from the checkpoint file
         print(f"Loading pre-trained weights from {checkpoint_path}...")
         state_dict = torch.load(checkpoint_path, map_location="cpu")
-        
-        # The weights are stored under the "best_model_sd" key in some checkpoints,
-        # but in demo.pkl they are at the top level. This handles both cases.
+
+        # Get the actual state_dict (it's inside 'best_model_sd')
         if 'best_model_sd' in state_dict:
-            full_model.load_state_dict(state_dict['best_model_sd'])
+            weights_to_load = state_dict['best_model_sd']
         else:
-            full_model.load_state_dict(state_dict)
-        print("Base weights loaded successfully.")
+            # Handle case where it's a raw state_dict
+            weights_to_load = state_dict
+        
+        # (Using 'encoder.encoder.graph_encoder.layers.0.fc1.bias' as a sample key from your traceback)
+        if 'encoder.encoder.graph_encoder.layers.0.fc1.bias' in weights_to_load:
+            print("Detected fine-tuned checkpoint. Remapping keys...")
+            new_state_dict = OrderedDict()
+            for k, v in weights_to_load.items():
+                # Original Traceback Mismatch:
+                # Unexpected (File):  encoder.encoder.graph_encoder...
+                # Missing (Model):     embedders.0.encoder.graph_encoder...
+                #
+                # We need to find keys that start with the bad prefix...
+                if k.startswith('encoder.encoder.graph_encoder'):
+                    # ...and replace it with the correct prefix.
+                    new_key = k.replace('encoder.encoder.graph_encoder', 'embedders.0.encoder.graph_encoder', 1)
+                    new_state_dict[new_key] = v
+                
+                # We also need to fix the other encoder keys (non-graph_encoder)
+                # (Using 'encoder.encoder.lm_output_learned_bias' from your traceback)
+                elif k.startswith('encoder.encoder.'):
+                    new_key = k.replace('encoder.encoder.', 'embedders.0.encoder.', 1)
+                    new_state_dict[new_key] = v
+
+            # We use strict=False because the fine-tuned checkpoint is *missing*
+            # keys for the MLP head (e.g., 'ff_layers...'), which is expected.
+            loading_info = full_model.load_state_dict(new_state_dict, strict=False)
+            print(f"Remapped loading info (Missing): {loading_info.missing_keys}")
+            
+        else:
+            print("Detected original checkpoint. Loading directly...")
+            # This is for loading the original 'demo.pkl'
+            # We still use strict=False in case the config doesn't
+            # perfectly match the original model (e.g., missing ff_layers)
+            full_model.load_state_dict(weights_to_load, strict=False)
+        
+        print("Base weights loaded successfully into Predictor shell.")
 
         # 3. Isolate the GFv2Embedder
         #    We find the correct embedder from the model's 'embedders' list.
@@ -104,7 +138,7 @@ class SimilarityHead(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.4),
             nn.Linear(hidden_dim // 2, 1),
-            nn.Sigmoid()
+            nn.Sigmoid() # Correctly bounds output between 0 and 1
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -121,7 +155,14 @@ class SiameseSpectralSimilarityModel(nn.Module):
     """
     The complete Siamese network for spectral similarity prediction.
     """
-    def __init__(self, model_config: dict, checkpoint_path: str, custom_encoder_weights_path: str = None):
+    def __init__(self, model_config: dict, checkpoint_path: str, spec_meta_dim: int, custom_encoder_weights_path: str = None):
+        """
+        Args:
+            model_config (dict): The 'model' section of the YAML config file.
+            checkpoint_path (str): Path to the base MassFormer.pkl checkpoint.
+            spec_meta_dim (int): The dimension of the metadata vector from the dataloader.
+            custom_encoder_weights_path (str, optional): Path to a fine-tuned model checkpoint.
+        """
         super().__init__()
         
         # 1. Create the shared molecular encoder
@@ -154,29 +195,33 @@ class SiameseSpectralSimilarityModel(nn.Module):
         # Get the embedding dimension from the encoder's config
         encoder_embedding_dim = self.encoder.encoder.get_embed_dim()
         
-        # 2. The input to the similarity head will be the concatenation of:
+        # 2. The input to the similarity head now includes the metadata
         #    - embedding_A (size: encoder_embedding_dim)
         #    - embedding_B (size: encoder_embedding_dim)
         #    - |embedding_A - embedding_B| (size: encoder_embedding_dim)
-        similarity_head_input_dim = 3 * encoder_embedding_dim
+        #    - spec_meta (size: spec_meta_dim)
+        similarity_head_input_dim = (3 * encoder_embedding_dim) + spec_meta_dim
         
         # 3. Create the similarity prediction head
         self.similarity_head = SimilarityHead(input_dim=similarity_head_input_dim)
         
-        print(f"Siamese model initialized. Encoder embedding dim: {encoder_embedding_dim}")
+        print(f"Siamese model initialized. Encoder embedding dim: {encoder_embedding_dim}, Metadata dim: {spec_meta_dim}")
+        print(f"Total SimilarityHead input dim: {similarity_head_input_dim}")
 
-    def forward(self, molecule_A_data: dict, molecule_B_data: dict) -> torch.Tensor:
+    def forward(self, molecule_A_data: dict, molecule_B_data: dict, spec_meta: torch.Tensor) -> torch.Tensor:
         """
-        Performs a forward pass on a pair of molecules.
+        Performs a forward pass on a pair of molecules with their metadata.
 
         Args:
             molecule_A_data (dict): Preprocessed graph data for the first molecule.
             molecule_B_data (dict): Preprocessed graph data for the second molecule.
+            spec_meta (torch.Tensor): The pre-processed metadata tensor for the pair.
 
         Returns:
             torch.Tensor: The predicted similarity score.
         """
         # Generate embeddings for each molecule using the *same* shared encoder
+        # --- (Bug fix from previous discussion: removed extra dict wrapper) ---
         embedding_A = self.encoder({'gf_v2_data': molecule_A_data})
         embedding_B = self.encoder({'gf_v2_data': molecule_B_data})
 
@@ -185,8 +230,8 @@ class SiameseSpectralSimilarityModel(nn.Module):
         # Calculate the element-wise absolute difference
         diff = torch.abs(embedding_A - embedding_B)
         
-        # Combine the embeddings for the similarity head
-        combined_vector = torch.cat((concat_A_B, diff), dim=1)
+        # Combine all features for the similarity head
+        combined_vector = torch.cat((concat_A_B, diff, spec_meta), dim=1)
         
         # Predict the final score
         score = self.similarity_head(combined_vector)
