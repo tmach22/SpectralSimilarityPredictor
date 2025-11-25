@@ -1,227 +1,285 @@
+# Save this as 'finetune_model.py'
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
 import yaml
 import argparse
 from tqdm import tqdm
-import copy
 from pathlib import Path
-
 import os
 import sys
+
+# --- 1. SETUP SYS.PATH ---
 cwd = Path.cwd()
-
+# (Add your sys.path logic here as in your train_model.py)
 data_loader_dir = os.path.join(cwd, 'data_loaders')
-print(f"Adding {data_loader_dir} to sys.path")
 sys.path.insert(0, data_loader_dir)
-
 model_dir = os.path.join(cwd, 'model')
-print(f"Adding {model_dir} to sys.path")
 sys.path.insert(0, model_dir)
-
-# --- Import our custom classes ---
-from siamesemodel import SiameseSpectralSimilarityModel
-
+train_dir = os.path.join(cwd, 'train_test_scripts')
+sys.path.insert(0, train_dir)
 parent_directory = os.path.dirname(cwd.parent)
-print(f"Parent directory: {parent_directory}")
 script_dir = os.path.join(parent_directory, 'tmach007', 'massformer', 'src', 'massformer')
-print(f"Adding {script_dir} to sys.path")
-# Add the parent directory to the Python path
 sys.path.insert(0, script_dir)
 
-from data_loader import SpectralSimilarityDataset, siamese_collate_fn
+# --- 2. LOCAL IMPORTS ---
+try:
+    from updated_siamesemodel import MassFormerEncoder # Your encoder model
+    from updated_train import merge_configs # Your config helper
+    from finetune_dataloader import TripletRankingDataset, triplet_ranking_collate_fn
+except ImportError as e:
+    print(f"Error: Could not import necessary modules.")
+    print("Please check your sys.path and file names.")
+    print(f"Original error: {e}")
+    sys.exit(1)
 
-def merge_configs(base_config, custom_config):
-    """
-    Recursively merges the custom config into the base config.
-    """
-    merged_config = copy.deepcopy(base_config)
-    for key, value in custom_config.items():
-        if isinstance(value, dict) and key in merged_config and isinstance(merged_config[key], dict):
-            merged_config[key] = merge_configs(merged_config[key], value)
-        else:
-            merged_config[key] = value
-    return merged_config
-
-def train_model(args):
-    """
-    Main function to orchestrate the model training and validation process.
-    """
-    # --- 1. Setup and Configuration ---
-    print("--- 1. Setting up training environment ---")
-    
-    device = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() and args.gpu_id >= 0 else "cpu")
+def finetune(args):
+    print("--- 1. Setting up fine-tuning environment ---")
+    device = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Load configurations
+    # --- 2. Load Config and Model ---
     print(f"Loading template configuration from: {args.template_config_path}")
     with open(args.template_config_path, 'r') as f:
         template_config = yaml.safe_load(f)
-
     print(f"Loading custom configuration from: {args.custom_config_path}")
     with open(args.custom_config_path, 'r') as f:
         custom_config = yaml.safe_load(f)
-
     full_config = merge_configs(template_config, custom_config)
     model_config = full_config.get('model', {})
     
-    # --- 2. Data Loading ---
-    print("\n--- 2. Initializing Datasets and DataLoaders ---")
+    print("Initializing MassFormerEncoder...")
+    model = MassFormerEncoder(
+        model_config=model_config,
+        checkpoint_path=args.checkpoint_path,
+    ).to(device)
     
-    train_dataset = SpectralSimilarityDataset(
+    # --- Dynamic Unfreezing Logic (Copied from your script) ---
+    print("Freezing all encoder parameters by default...")
+    for param in model.parameters():
+        param.requires_grad = False
+    
+    try:
+        # model.encoder is MassFormerEncoder, model.encoder.encoder is GFv2Embedder
+        encoder_layers = model.encoder.encoder.graph_encoder.layers
+        num_total_layers = len(encoder_layers)
+        
+        if args.unfreeze_layers == -1:
+            # Unfreeze the entire GFv2Embedder
+            print(f"Unfreezing ALL {num_total_layers} transformer layers and all embeddings...")
+            for param in model.encoder.encoder.graph_encoder.parameters():
+                param.requires_grad = True
+        
+        elif args.unfreeze_layers > 0:
+            # Unfreeze the last N layers
+            num_to_unfreeze = min(args.unfreeze_layers, num_total_layers) # Cap at max layers
+            print(f"Unfreezing the last {num_to_unfreeze} of {num_total_layers} transformer layers...")
+            
+            for layer in encoder_layers[-num_to_unfreeze:]:
+                for param in layer.parameters():
+                    param.requires_grad = True
+            
+            # (Your commented-out final_ln logic was here)
+        
+        elif args.unfreeze_layers == 0:
+            print("Freezing all transformer layers (unfreeze_layers=0).")
+    
+    except AttributeError as e:
+        print(f"Error while trying to unfreeze layers: {e}")
+        print(f"Warning: Could not find encoder layers. Is 'model.encoder.encoder.graph_encoder.layers' the correct path?")
+        print("Falling back to unfreezing *all* parameters.")
+        for param in model.parameters():
+            param.requires_grad = True
+            
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Model loaded with {trainable_params} trainable parameters.")
+    
+    if trainable_params == 0:
+        print("\nWARNING: 0 trainable parameters. The model will not learn.")
+    # --- End Unfreezing Logic ---
+
+
+    # --- 3. Data Loading ---
+    print("\n--- 2. Initializing Datasets and DataLoaders ---")
+    train_dataset = TripletRankingDataset(
         pairs_feather_path=args.train_pairs_path,
         spec_data_path=args.spec_data_path,
         mol_data_path=args.mol_data_path,
-        subset_size=args.subset_size
+        num_samples_per_epoch=args.epoch_size,
+        margin_per_bin=args.margin_per_bin
     )
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=True, 
-        collate_fn=siamese_collate_fn, num_workers=args.num_workers, pin_memory=True
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size=args.batch_size,
+        shuffle=True, 
+        collate_fn=triplet_ranking_collate_fn,
+        num_workers=args.num_workers,
+        pin_memory=True
     )
-    print(f"Training dataset contains {len(train_dataset)} pairs.")
+    print(f"Training dataset size: {len(train_dataset)} (epoch size)")
 
-    val_dataset = SpectralSimilarityDataset(
+    # --- *** NEW: VALIDATION DATALOADER *** ---
+    print("Initializing validation dataset...")
+    val_dataset = TripletRankingDataset(
         pairs_feather_path=args.val_pairs_path,
         spec_data_path=args.spec_data_path,
         mol_data_path=args.mol_data_path,
-        subset_size=args.subset_size
+        num_samples_per_epoch=args.val_epoch_size, # Use a separate size for validation
+        margin_per_bin=args.margin_per_bin
     )
-    val_loader = torch.utils.data.DataLoader(
-        val_dataset, batch_size=args.batch_size, shuffle=False, 
-        collate_fn=siamese_collate_fn, num_workers=args.num_workers, pin_memory=True
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=args.batch_size,
+        shuffle=False, # No need to shuffle validation
+        collate_fn=triplet_ranking_collate_fn,
+        num_workers=args.num_workers,
+        pin_memory=True
     )
-    print(f"Validation dataset contains {len(val_dataset)} pairs.")
-
-    # --- 3. Model, Loss, and Optimizer ---
-    print("\n--- 3. Initializing Model, Loss Function, and Optimizer ---")
+    print(f"Validation dataset size: {len(val_dataset)} (epoch size)")
+    # --- *** END NEW *** ---
     
-    model = SiameseSpectralSimilarityModel(
-        model_config=model_config,
-        checkpoint_path=args.checkpoint_path
+    # --- 4. Loss and Optimizer ---
+    print("\n--- 3. Initializing Optimizer (Loss is manual) ---")
+    
+    optimizer = optim.AdamW(
+        filter(lambda p: p.requires_grad, model.parameters()), 
+        lr=args.learning_rate
     )
-
-    if args.load_from_checkpoint:
-        print(f"\n--- Loading weights from checkpoint for fine-tuning: {args.load_from_checkpoint} ---")
-        model.load_state_dict(torch.load(args.load_from_checkpoint, map_location=device))
-        
-        print("--- Unfreezing encoder for fine-tuning ---")
-        for param in model.encoder.parameters():
-            param.requires_grad = True
-
-        print(f"Setting up differential learning rates:")
-        print(f"  - Encoder LR: {args.encoder_lr}")
-        print(f"  - Head LR:    {args.head_lr}")
-            
-        optimizer_parameters = [
-            {'params': model.encoder.parameters(), 'lr': args.encoder_lr},
-            {'params': model.similarity_head.parameters(), 'lr': args.head_lr}
-        ]
-    else:
-        print("--- Freezing encoder weights for initial training phase ---")
-        for param in model.encoder.parameters():
-            param.requires_grad = False
-
-    model.to(device)
     
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Model initialized with {trainable_params:,} trainable parameters.")
+    if not optimizer.param_groups[0]['params']:
+        print("Optimizer has 0 parameters to train. Exiting.")
+        return
 
-    criterion = nn.MSELoss()
-    optimizer = optim.AdamW(optimizer_parameters)
+    # --- 5. Training Loop ---
+    print(f"\n--- 4. Starting Fine-Tuning for {args.epochs} Epochs ---")
     
-    # --- 4. Training Loop ---
-    print("\n--- 4. Starting Model Training ---")
+    # --- *** NEW: BEST MODEL & EARLY STOPPING LOGIC *** ---
     best_val_loss = float('inf')
-    
-    # =============================================================================
-    # *** NEW: Initialize variables for early stopping ***
-    # =============================================================================
-    early_stopping_patience = args.patience
     early_stopping_counter = 0
+    os.makedirs(args.output_dir, exist_ok=True)
+    best_model_path = os.path.join(args.output_dir, 'best_finetuned_encoder_unfreeze2.pkl')
+    # --- *** END NEW *** ---
 
     for epoch in range(args.epochs):
         print(f"\n--- Epoch {epoch+1}/{args.epochs} ---")
         
+        # --- Training Phase ---
         model.train()
-        running_train_loss = 0.0
-        for batch_A, batch_B, similarities in tqdm(train_loader, desc="Training"):
-            for key in batch_A: batch_A[key] = batch_A[key].to(device, non_blocking=True)
-            for key in batch_B: batch_B[key] = batch_B[key].to(device, non_blocking=True)
-            similarities = similarities.to(device, non_blocking=True)
+        running_loss = 0.0
+        for batch_L1, batch_L2, batch_H1, batch_H2, targets, batch_margins in tqdm(train_loader, desc="Training"):
+            
+            # Move all tensors to device
+            for batch in [batch_L1, batch_L2, batch_H1, batch_H2]:
+                for key in batch: batch[key] = batch[key].to(device)
+            targets = targets.to(device)
+            batch_margins = batch_margins.to(device)
+            
             optimizer.zero_grad()
-            predictions = model(batch_A, batch_B)
-            loss = criterion(predictions.squeeze(), similarities)
+            
+            emb_L1 = model({'gf_v2_data': batch_L1})
+            emb_L2 = model({'gf_v2_data': batch_L2})
+            emb_H1 = model({'gf_v2_data': batch_H1})
+            emb_H2 = model({'gf_v2_data': batch_H2})
+            
+            dist_LowSim = 1.0 - F.cosine_similarity(emb_L1, emb_L2)
+            dist_HighSim = 1.0 - F.cosine_similarity(emb_H1, emb_H2)
+            
+            loss_per_item = F.relu(dist_HighSim - dist_LowSim + batch_margins)
+            loss = loss_per_item.mean()
+            
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
-            running_train_loss += loss.item()
-        avg_train_loss = running_train_loss / len(train_loader)
-        print(f"Average Training Loss: {avg_train_loss:.6f}")
-
+            running_loss += loss.item()
+            
+        avg_train_loss = running_loss / len(train_loader)
+        print(f"Epoch {epoch+1} Average Training Loss: {avg_train_loss:.6f}")
+        
+        # --- *** NEW: VALIDATION PHASE *** ---
         model.eval()
         running_val_loss = 0.0
         with torch.no_grad():
-            for batch_A, batch_B, similarities in tqdm(val_loader, desc="Validating"):
-                for key in batch_A: batch_A[key] = batch_A[key].to(device, non_blocking=True)
-                for key in batch_B: batch_B[key] = batch_B[key].to(device, non_blocking=True)
-                similarities = similarities.to(device, non_blocking=True)
-                predictions = model(batch_A, batch_B)
-                loss = criterion(predictions.squeeze(), similarities)
-                running_val_loss += loss.item()
-        avg_val_loss = running_val_loss / len(val_loader)
-        print(f"Average Validation Loss: {avg_val_loss:.6f}")
+            for batch_L1, batch_L2, batch_H1, batch_H2, targets, batch_margins in tqdm(val_loader, desc="Validating"):
+                
+                for batch in [batch_L1, batch_L2, batch_H1, batch_H2]:
+                    for key in batch: batch[key] = batch[key].to(device)
+                targets = targets.to(device)
+                batch_margins = batch_margins.to(device)
 
-        # =============================================================================
-        # *** NEW: Early stopping logic ***
-        # =============================================================================
+                emb_L1 = model({'gf_v2_data': batch_L1})
+                emb_L2 = model({'gf_v2_data': batch_L2})
+                emb_H1 = model({'gf_v2_data': batch_H1})
+                emb_H2 = model({'gf_v2_data': batch_H2})
+
+                dist_LowSim = 1.0 - F.cosine_similarity(emb_L1, emb_L2)
+                dist_HighSim = 1.0 - F.cosine_similarity(emb_H1, emb_H2)
+
+                loss_per_item = F.relu(dist_HighSim - dist_LowSim + batch_margins)
+                loss = loss_per_item.mean()
+                running_val_loss += loss.item()
+
+        avg_val_loss = running_val_loss / len(val_loader)
+        print(f"Epoch {epoch+1} Average Validation Loss: {avg_val_loss:.6f}")
+        
+        # --- *** NEW: BEST MODEL & EARLY STOPPING LOGIC *** ---
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            early_stopping_counter = 0  # Reset counter on improvement
-            print(f"New best validation loss: {best_val_loss:.6f}. Saving model...")
-            os.makedirs(args.output_dir, exist_ok=True)
-            save_name = 'best_model_finetuned.pth' if args.load_from_checkpoint else 'best_model.pth'
-            torch.save(model.state_dict(), os.path.join(args.output_dir, save_name))
+            early_stopping_counter = 0
+            print(f"New best validation loss! Saving model to {best_model_path}")
+            
+            finetuned_state_dict = model.state_dict()
+            checkpoint_to_save = {
+                'best_model_sd': finetuned_state_dict,
+                'fine_tuned_epoch': epoch + 1,
+                'fine_tuned_val_loss': avg_val_loss
+            }
+            torch.save(checkpoint_to_save, best_model_path)
+            
         else:
             early_stopping_counter += 1
-            print(f"Validation loss did not improve. Early stopping counter: {early_stopping_counter}/{early_stopping_patience}")
-
-        if early_stopping_counter >= early_stopping_patience:
+            print(f"Validation loss did not improve. Counter: {early_stopping_counter}/{args.patience}")
+            
+        if early_stopping_counter >= args.patience:
             print("Early stopping triggered. Terminating training.")
-            break  # Exit the training loop
+            break # Exit the training loop
+        # --- *** END NEW *** ---
 
-    print("\n--- Training Complete ---")
+    print("\n--- Fine-Tuning Complete ---")
     print(f"Best validation loss achieved: {best_val_loss:.6f}")
+    print(f"Best model saved to {best_model_path}")
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Train or Fine-tune the Siamese Spectral Similarity Model.")
+    parser = argparse.ArgumentParser(description="Fine-tune the MassFormer encoder.")
     
-    # --- Data & Model Paths ---
+    # Data paths
     parser.add_argument("--train_pairs_path", type=str, required=True)
-    parser.add_argument("--val_pairs_path", type=str, required=True)
+    parser.add_argument("--val_pairs_path", type=str, required=True) # <-- NEW
     parser.add_argument("--spec_data_path", type=str, required=True)
     parser.add_argument("--mol_data_path", type=str, required=True)
+    
+    # Config/Model paths
     parser.add_argument("--template_config_path", type=str, required=True)
     parser.add_argument("--custom_config_path", type=str, required=True)
-    parser.add_argument("--checkpoint_path", type=str, required=True, help="Path to the original MassFormer checkpoint (demo.pkl).")
-    parser.add_argument("--output_dir", type=str, default="./trained_model")
+    parser.add_argument("--checkpoint_path", type=str, required=True, help="Path to the *base* MassFormer .pkl checkpoint.")
+    parser.add_argument("--output_dir", type=str, default="./finetuned_encoder")
     
-    # --- Training Hyperparameters ---
-    parser.add_argument("--learning_rate", type=float, default=1e-4, help="Initial learning rate (will be overridden for fine-tuning).")
-    parser.add_argument("--epochs", type=int, default=50)
+    # Training Hyperparameters
+    parser.add_argument("--learning_rate", type=float, default=1e-6, help="Small LR for fine-tuning")
+    parser.add_argument("--epochs", type=int, default=50) # Increased max epochs for early stopping
     parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument("--subset_size", type=float, default=None)
-
-    # =============================================================================
-    # *** NEW: Add arguments for fine-tuning and early stopping ***
-    # =============================================================================
-    parser.add_argument("--load_from_checkpoint", type=str, default=None, help="Path to a model checkpoint to load for fine-tuning (e.g., best_model.pth).")
-    parser.add_argument("--encoder_lr", type=float, default=1e-6, help="Learning rate for the encoder during fine-tuning.")
-    parser.add_argument("--head_lr", type=float, default=1e-5, help="Learning rate for the similarity head.")
-    parser.add_argument("--patience", type=int, default=3, help="Number of epochs to wait for validation loss improvement before stopping.")
-
-    # --- System Configuration ---
+    parser.add_argument("--margin_per_bin", type=float, default=0.02, help="Dynamic margin to enforce per bin difference.")
+    parser.add_argument("--epoch_size", type=int, default=100000, help="Number of random triplets per training epoch")
+    parser.add_argument("--val_epoch_size", type=int, default=10000, help="Number of random triplets per validation epoch") # <-- NEW
+    parser.add_argument("--patience", type=int, default=3, help="Early stopping patience (e.g., 3)") # <-- NEW
+    
+    # Model Hyperparameters
+    parser.add_argument("--unfreeze_layers", type=int, default=2, help="Number of *last* transformer layers to unfreeze. 0 = freeze all, 2 = unfreeze last 2 (default), -1 = unfreeze all.")
+    
+    # System
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--num_workers", type=int, default=4)
 
     args = parser.parse_args()
-    train_model(args)
+    print(f"Arguments: {args}")
+    finetune(args)
