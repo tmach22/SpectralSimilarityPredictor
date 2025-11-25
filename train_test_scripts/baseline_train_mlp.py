@@ -32,7 +32,7 @@ class HDF5Dataset(Dataset):
 # --- 2. PyTorch MLP Model Definition ---
 class MLPRegressor(nn.Module):
     """A simple MLP for regression, designed for GPU execution."""
-    def __init__(self, input_dim, hidden_dim1=512, hidden_dim2=256, dropout_rate=0.2):
+    def __init__(self, input_dim, hidden_dim1=512, hidden_dim2=256, dropout_rate=0.4):
         super(MLPRegressor, self).__init__()
         self.layers = nn.Sequential(
             nn.Linear(input_dim, hidden_dim1),
@@ -89,11 +89,11 @@ def main():
 
     # --- 2. Model Initialization ---
     input_dim = train_dataset.X.shape[1]
-    model = MLPRegressor(input_dim).to(device)
+    model = MLPRegressor(input_dim, hidden_dim1=256, hidden_dim2=128).to(device)
     print(f"\n--- Model Initialized with {sum(p.numel() for p in model.parameters())} parameters ---")
 
     loss_function = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=1e-5)
 
     # --- 3. Training Loop ---
     best_val_loss = float('inf')

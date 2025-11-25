@@ -21,7 +21,7 @@ sys.path.insert(0, model_dir)
 
 # --- Import our custom classes ---
 # Assuming this script is in the same directory as your model and data loader scripts
-from siamesemodel import SiameseSpectralSimilarityModel
+from updated_siamesemodel import SiameseSpectralSimilarityModel
 
 parent_directory = os.path.dirname(cwd.parent)
 print(f"Parent directory: {parent_directory}")
@@ -30,7 +30,7 @@ print(f"Adding {script_dir} to sys.path")
 # Add the parent directory to the Python path
 sys.path.insert(0, script_dir)
 
-from data_loader import SpectralSimilarityDataset, siamese_collate_fn
+from data_loader_v2 import SpectralSimilarityDataset, siamese_collate_fn
 
 def merge_configs(base_config, custom_config):
     """
@@ -107,10 +107,16 @@ def train_model(args):
 
     # --- 3. Model, Loss, and Optimizer ---
     print("\n--- 3. Initializing Model, Loss Function, and Optimizer ---")
+
+    print("Getting metadata dimension from dataset...")
+    _, _, test_meta, _ = train_dataset[0]
+    spec_meta_dim = test_meta.shape[1] # shape is [1, num_features]
+    print(f"Detected spec_meta_dim: {spec_meta_dim}")
     
     model = SiameseSpectralSimilarityModel(
         model_config=model_config,
-        checkpoint_path=args.checkpoint_path
+        checkpoint_path=args.checkpoint_path,
+        spec_meta_dim=spec_meta_dim
         # custom_encoder_weights_path=args.contrastive_checkpoint_path
     ).to(device)
 
@@ -136,12 +142,13 @@ def train_model(args):
         
         model.train()
         running_train_loss = 0.0
-        for batch_A, batch_B, similarities in tqdm(train_loader, desc="Training"):
+        for batch_A, batch_B, batch_meta, similarities in tqdm(train_loader, desc="Training"):
             for key in batch_A: batch_A[key] = batch_A[key].to(device)
             for key in batch_B: batch_B[key] = batch_B[key].to(device)
+            batch_meta = batch_meta.to(device)
             similarities = similarities.to(device)
             optimizer.zero_grad()
-            predictions = model(batch_A, batch_B)
+            predictions = model(batch_A, batch_B, batch_meta)
             loss = criterion(predictions.squeeze(), similarities)
             loss.backward()
             optimizer.step()
@@ -152,11 +159,12 @@ def train_model(args):
         model.eval()
         running_val_loss = 0.0
         with torch.no_grad():
-            for batch_A, batch_B, similarities in tqdm(val_loader, desc="Validating"):
+            for batch_A, batch_B, batch_meta, similarities in tqdm(val_loader, desc="Validating"):
                 for key in batch_A: batch_A[key] = batch_A[key].to(device)
                 for key in batch_B: batch_B[key] = batch_B[key].to(device)
+                batch_meta = batch_meta.to(device)
                 similarities = similarities.to(device)
-                predictions = model(batch_A, batch_B)
+                predictions = model(batch_A, batch_B, batch_meta)
                 loss = criterion(predictions.squeeze(), similarities)
                 running_val_loss += loss.item()
         avg_val_loss = running_val_loss / len(val_loader)

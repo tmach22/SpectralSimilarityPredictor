@@ -32,7 +32,7 @@ class HDF5Dataset(Dataset):
 
 class MLPRegressor(nn.Module):
     """A simple MLP for regression, designed for GPU execution."""
-    def __init__(self, input_dim, hidden_dim1=512, hidden_dim2=256, dropout_rate=0.2):
+    def __init__(self, input_dim, hidden_dim1=512, hidden_dim2=256, dropout_rate=0.4):
         super(MLPRegressor, self).__init__()
         self.layers = nn.Sequential(
             nn.Linear(input_dim, hidden_dim1),
@@ -85,7 +85,7 @@ def main():
         print(f"Error reading HDF5 file to determine input dimension: {e}")
         return
 
-    model = MLPRegressor(input_dim).to(device)
+    model = MLPRegressor(input_dim, hidden_dim1=256, hidden_dim2=128).to(device)
     print(f"\n--- 1. Loading trained model from {args.model_path} ---")
     try:
         model.load_state_dict(torch.load(args.model_path, map_location=device))
