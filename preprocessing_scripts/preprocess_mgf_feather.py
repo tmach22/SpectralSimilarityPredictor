@@ -2,17 +2,17 @@ import pandas as pd
 import numpy as np
 
 # Load your spectra dataframe
-msg_df = pd.read_feather('/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/spectra_pairs/mgf_df_mona.feather')
+msg_df = pd.read_feather('/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/spectra_pairs/augmented_msg_df.feather')
 
 # Select and rename columns to be more compatible with the MassFormer pipeline's expectations
 # We only need the unique identifier and the structural/adduct information.
-mol_data = msg_df[['spectrum_id', 'smiles', 'adduct', 'peaks', 'precursor_mz', 'instrument']].copy()
+mol_data = msg_df[['spectrum_id', 'smiles', 'adduct', 'peaks', 'precursor_mz', 'instrument', 'collision_energy']].copy()
 mol_data.rename(columns={'spectrum_id': 'spec_id', 'precursor_mz': 'prec_mz', 'instrument': 'inst'}, inplace=True)
 
 # The MassFormer model was trained with collision energy as a feature.
 # Your dataframe does not have this. We will add a placeholder column.
 # A common default or median value like 35.0 is a reasonable choice.
-mol_data['col_energy'] = '35.0 eV'
+mol_data['col_energy'] = mol_data['collision_energy'].apply(lambda x: f'{x:.1f} eV')
 
 mol_data['inst_type'] = ''
 mol_data.loc[mol_data['inst'] == "Orbitrap", "inst_type"] = "FT"
@@ -22,8 +22,11 @@ mol_data['ion_mode'] = 'P'
 
 mol_data['frag_mode'] = 'CID'  # Assuming all are CID spectra
 
-mol_data['prec_type'] = None
+mol_data['prec_type'] = mol_data['adduct']
 mol_data['ri'] = None
+mol_data['spec_type'] = None
+mol_data['col_gas'] = None
+mol_data.drop(columns=['collision_energy'], inplace=True)
 # The MassFormer pipeline also expects a 'dataset' column. We'll add one.
 mol_data['dataset'] = 'custom_dataset'
 
