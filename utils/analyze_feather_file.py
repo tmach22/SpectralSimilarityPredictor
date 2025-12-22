@@ -31,7 +31,7 @@ def analyze_feather_file(file_path):
         print("First 5 Example Records:")
         if len(df) > 0:
             # Use .to_markdown() for clean table output
-            print(df.head())
+            print(df.head(5))
         else:
             print("The file contains no records.")
         print("="*50)

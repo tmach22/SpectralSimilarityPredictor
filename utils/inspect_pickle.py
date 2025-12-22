@@ -43,8 +43,8 @@ def inspect_pickle(file_path):
         if isinstance(data, pd.DataFrame):
             print(f"This is a Pandas DataFrame.")
             print(f"Shape (Rows, Columns): {data.shape}")
-            print("First 5 column names:")
-            print(list(data.columns[:5]))
+            print("Column names:")
+            print(list(data.columns[:]))
 
             print("First 5 rows:")
             print(data.head())
