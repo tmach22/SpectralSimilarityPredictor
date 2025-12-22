@@ -1,157 +1,154 @@
+import pandas as pd
+import numpy as np
 import argparse
 import os
-import time
-import numpy as np
-import h5py
-import pandas as pd
-import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-from scipy.stats import pearsonr
-from sklearn.metrics import mean_squared_error
+import sys
+import pickle
 from tqdm import tqdm
+from rdkit import Chem
+from rdkit.Chem import AllChem
+from sklearn.neural_network import MLPClassifier
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, classification_report
+from sklearn.preprocessing import StandardScaler
 
-# --- 1. Data Loader and Model Definition (must match training script) ---
+def compute_fp(smiles):
+    """Generates a 2048-bit Morgan Fingerprint (radius=2)"""
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol:
+            # Generate bit vector and convert to numpy array
+            fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
+            arr = np.zeros((0,), dtype=np.int8)
+            DataStructs.ConvertToNumpyArray(fp, arr)
+            return arr
+        else:
+            return np.zeros((2048,), dtype=np.int8)
+    except:
+        return np.zeros((2048,), dtype=np.int8)
 
-class HDF5Dataset(Dataset):
-    """A Dataset class for loading data from an HDF5 file."""
-    def __init__(self, h5_path, group_name):
-        self.h5_file = h5py.File(h5_path, 'r')
-        self.X = self.h5_file[group_name]['X']
-        self.y = self.h5_file[group_name]['y']
+def prepare_data(pairs_path, mol_path, split_name="Train"):
+    print(f"--- Loading {split_name} Data ---")
     
-    def __len__(self):
-        return len(self.y)
+    # 1. Load Dataframes
+    pairs_df = pd.read_feather(pairs_path)
+    mol_df = pd.read_pickle(mol_path)
+    
+    # Map InChIKey -> SMILES
+    # Assuming mol_df index is InChIKey or it has a column 'inchikey'
+    if 'inchikey' in mol_df.columns:
+        mol_df = mol_df.set_index('inchikey')
+    
+    # 2. Pre-compute Fingerprints for all relevant molecules
+    # (Optimization: only compute unique molecules in this split)
+    relevant_keys = set(pairs_df['inchikey1']).union(set(pairs_df['inchikey2']))
+    print(f"Generating fingerprints for {len(relevant_keys)} unique molecules...")
+    
+    fp_cache = {}
+    for key in tqdm(relevant_keys):
+        if key in mol_df.index:
+            smiles = mol_df.loc[key]['smiles']
+            # Handle case where index might have duplicates
+            if isinstance(smiles, pd.Series): smiles = smiles.iloc[0]
+            
+            mol = Chem.MolFromSmiles(smiles)
+            if mol:
+                fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
+                arr = np.zeros((2048,), dtype=np.float32) # Float for MLP
+                from rdkit.Chem import DataStructs
+                DataStructs.ConvertToNumpyArray(fp, arr)
+                fp_cache[key] = arr
+            else:
+                fp_cache[key] = np.zeros((2048,), dtype=np.float32)
+        else:
+            fp_cache[key] = np.zeros((2048,), dtype=np.float32)
+
+    # 3. Build X (Features) and y (Labels)
+    print(f"Building feature matrix for {len(pairs_df)} pairs...")
+    X_list = []
+    y_list = []
+    
+    # Determine label column
+    label_col = 'label' if 'label' in pairs_df.columns else 'cosine_similarity'
+    
+    for _, row in tqdm(pairs_df.iterrows(), total=len(pairs_df)):
+        fp1 = fp_cache.get(row['inchikey1'], np.zeros((2048,), dtype=np.float32))
+        fp2 = fp_cache.get(row['inchikey2'], np.zeros((2048,), dtype=np.float32))
         
-    def __getitem__(self, index):
-        # Fetches a single data point
-        return torch.from_numpy(self.X[index].astype(np.float32)), torch.tensor(self.y[index], dtype=torch.float32)
+        # FEATURE ENGINEERING:
+        # Standard approach for Siamese-like MLP: Concatenate [FP1, FP2]
+        # Alternative: [FP1, FP2, FP1*FP2, |FP1-FP2|] -> But let's stick to concat for a direct baseline
+        features = np.concatenate([fp1, fp2])
+        X_list.append(features)
+        
+        # Label handling
+        if label_col == 'cosine_similarity':
+            label = 1 if row[label_col] >= 0.7 else 0
+        else:
+            label = int(row[label_col])
+        y_list.append(label)
+        
+    return np.array(X_list), np.array(y_list)
 
-    def close(self):
-        self.h5_file.close()
-
-class MLPRegressor(nn.Module):
-    """A simple MLP for regression, designed for GPU execution."""
-    def __init__(self, input_dim, hidden_dim1=512, hidden_dim2=256, dropout_rate=0.4):
-        super(MLPRegressor, self).__init__()
-        self.layers = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim1),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(hidden_dim1, hidden_dim2),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(hidden_dim2, 1)
-        )
-
-    def forward(self, x):
-        return self.layers(x).squeeze(-1)
-
-def main():
-    parser = argparse.ArgumentParser(description="Test a trained PyTorch MLP baseline model.")
+def train_mlp_baseline(args):
+    # 1. Prepare Data
+    X_train, y_train = prepare_data(args.train_pairs_path, args.mol_data_path, "Train")
+    X_test, y_test = prepare_data(args.test_pairs_path, args.mol_data_path, "Test")
     
-    # --- Paths ---
-    parser.add_argument("--model_path", type=str, required=True, 
-                        help="Path to the trained PyTorch model file (e.g., baseline_mlp_pytorch_best.pt).")
-    parser.add_argument("--data_path", type=str, required=True, 
-                        help="Path to the HDF5 file containing the dataset.")
-    parser.add_argument("--group_name", type=str, default="validation", 
-                        help="Name of the group in the HDF5 file to use for testing (e.g., 'validation' or 'test').")
-    parser.add_argument("--output_csv", type=str, default=None, 
-                        help="Optional: Path to save a CSV file with predictions and true values.")
+    print(f"Train Input Shape: {X_train.shape}")
+    print(f"Test Input Shape: {X_test.shape}")
     
-    # --- Inference Hyperparameters ---
-    parser.add_argument("--batch_size", type=int, default=4096, help="Batch size for inference.")
-    parser.add_argument("--num_workers", type=int, default=4, help="Number of workers for the DataLoader.")
-
-    args = parser.parse_args()
-
-    # --- 1. Setup Device and Load Model ---
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
-    print(f"\n--- Using device: {device} ---")
-
-    if not os.path.exists(args.model_path):
-        print(f"Error: Model file not found at {args.model_path}")
-        return
-
-    # Get input dimension from the dataset to correctly initialize the model
-    try:
-        with h5py.File(args.data_path, 'r') as hf:
-            if args.group_name not in hf:
-                print(f"Error: Group '{args.group_name}' not found in HDF5 file.")
-                return
-            input_dim = hf[args.group_name]['X'].shape[1]
-    except Exception as e:
-        print(f"Error reading HDF5 file to determine input dimension: {e}")
-        return
-
-    model = MLPRegressor(input_dim, hidden_dim1=256, hidden_dim2=128).to(device)
-    print(f"\n--- 1. Loading trained model from {args.model_path} ---")
-    try:
-        model.load_state_dict(torch.load(args.model_path, map_location=device))
-        print("Model loaded successfully.")
-    except Exception as e:
-        print(f"Error loading model state_dict: {e}")
-        return
-
-    # --- 2. Load Test Data ---
-    print(f"\n--- 2. Loading test data from {args.data_path} (Group: {args.group_name}) ---")
-    test_dataset = HDF5Dataset(args.data_path, args.group_name)
-    test_loader = DataLoader(
-        test_dataset, 
-        batch_size=args.batch_size, 
-        shuffle=False, 
-        num_workers=args.num_workers, 
-        pin_memory=True
+    # 2. Define Model (scikit-learn MLP)
+    # Architecture: Input(4096) -> 1024 -> 512 -> 256 -> 1
+    # This mimics a reasonably deep dense baseline
+    print("\n--- Training MLP Classifier ---")
+    clf = MLPClassifier(
+        hidden_layer_sizes=(1024, 512, 256),
+        activation='relu',
+        solver='adam',
+        alpha=1e-4, # Weight decay
+        batch_size=64,
+        learning_rate_init=1e-3,
+        max_iter=20, # Equivalent to epochs
+        early_stopping=True,
+        verbose=True,
+        random_state=42
     )
-    print(f"Test data shape: {test_dataset.X.shape}")
-
-    # --- 3. Make Predictions ---
-    print("\n--- 3. Making predictions on the test set ---")
-    model.eval()
-    all_preds = []
-    all_labels = []
     
-    start_time = time.time()
-    with torch.no_grad():
-        for X_batch, y_batch in tqdm(test_loader, desc="Predicting"):
-            X_batch = X_batch.to(device)
-            predictions = model(X_batch)
-            all_preds.append(predictions.cpu().numpy())
-            all_labels.append(y_batch.cpu().numpy())
+    # 3. Train
+    clf.fit(X_train, y_train)
     
-    duration = time.time() - start_time
-    print(f"Prediction completed in {duration:.2f} seconds.")
-
-    y_pred = np.concatenate(all_preds)
-    y_test = np.concatenate(all_labels)
-
-    # --- 4. Evaluate Performance ---
-    print("\n--- 4. Evaluating Model Performance ---")
-    mse = mean_squared_error(y_test, y_pred)
-    rmse = np.sqrt(mse)
-    pearson_corr, _ = pearsonr(y_test, y_pred)
+    # 4. Evaluate
+    print("\n--- Evaluating on Test Set ---")
+    y_pred = clf.predict(X_test)
+    y_prob = clf.predict_proba(X_test)[:, 1]
     
-    print("\n--- Final Performance Metrics ---")
-    print(f"Mean Squared Error (MSE):     {mse:.6f}")
-    print(f"Root Mean Squared Error (RMSE): {rmse:.6f}")
-    print(f"Pearson Correlation (r):      {pearson_corr:.6f}")
-
-    # --- 5. Save Predictions (Optional) ---
-    if args.output_csv:
-        print(f"\n--- 5. Saving predictions to {args.output_csv} ---")
-        results_df = pd.DataFrame({
-            'true_similarity': y_test,
-            'predicted_similarity': y_pred
-        })
-        try:
-            results_df.to_csv(args.output_csv, index=False)
-            print("Predictions saved successfully.")
-        except Exception as e:
-            print(f"Error saving predictions to CSV: {e}")
-
-    test_dataset.close()
-    print("\n--- Testing Process Complete ---")
+    acc = accuracy_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
+    roc = roc_auc_score(y_test, y_prob)
+    
+    print(f"\nResults for MLP (Morgan Fingerprints):")
+    print(f"Accuracy: {acc:.4f}")
+    print(f"F1 Score: {f1:.4f}")
+    print(f"ROC-AUC:  {roc:.4f}")
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred))
+    
+    # 5. Save Results
+    os.makedirs(args.output_dir, exist_ok=True)
+    results_df = pd.DataFrame({
+        'y_true': y_test,
+        'y_pred': y_pred,
+        'y_prob': y_prob
+    })
+    results_df.to_csv(os.path.join(args.output_dir, "mlp_fingerprint_results.csv"), index=False)
+    print(f"Results saved to {args.output_dir}")
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--train_pairs_path", type=str, required=True)
+    parser.add_argument("--test_pairs_path", type=str, required=True)
+    parser.add_argument("--mol_data_path", type=str, required=True)
+    parser.add_argument("--output_dir", type=str, default="./results/baseline_mlp")
+    
+    args = parser.parse_args()
+    train_mlp_baseline(args)

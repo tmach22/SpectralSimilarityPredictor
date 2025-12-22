@@ -87,8 +87,8 @@ def test_binary(args):
             
             # Apply Sigmoid (since we removed it from the model class)
             probs = torch.sigmoid(logits)
-            
-            # Threshold at 0.5
+
+            # Threshold at 0.73
             preds = (probs > 0.5).float()
             
             # Store
@@ -119,7 +119,7 @@ def test_binary(args):
 
     # --- 7. Save Results ---
     os.makedirs(args.output_dir, exist_ok=True)
-    save_path = os.path.join(args.output_dir, "test_results_v2.csv")
+    save_path = os.path.join(args.output_dir, "test_results.csv")
     
     df_results = pd.DataFrame({
         'prob_similarity': all_probs,
