@@ -159,7 +159,7 @@ def finetune(args):
     best_val_loss = float('inf')
     early_stopping_counter = 0
     os.makedirs(args.output_dir, exist_ok=True)
-    best_model_path = os.path.join(args.output_dir, 'best_finetuned_encoder_unfreeze2.pkl')
+    best_model_path = os.path.join(args.output_dir, 'best_finetuned_encoder_consensus.pkl')
     # --- *** END NEW *** ---
 
     for epoch in range(args.epochs):
@@ -254,7 +254,7 @@ if __name__ == '__main__':
     
     # Data paths
     parser.add_argument("--train_pairs_path", type=str, required=True)
-    parser.add_argument("--val_pairs_path", type=str, required=True) # <-- NEW
+    parser.add_argument("--val_pairs_path", type=str, required=True)
     parser.add_argument("--spec_data_path", type=str, required=True)
     parser.add_argument("--mol_data_path", type=str, required=True)
     
@@ -266,12 +266,12 @@ if __name__ == '__main__':
     
     # Training Hyperparameters
     parser.add_argument("--learning_rate", type=float, default=1e-6, help="Small LR for fine-tuning")
-    parser.add_argument("--epochs", type=int, default=50) # Increased max epochs for early stopping
+    parser.add_argument("--epochs", type=int, default=50) 
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--margin_per_bin", type=float, default=0.02, help="Dynamic margin to enforce per bin difference.")
     parser.add_argument("--epoch_size", type=int, default=100000, help="Number of random triplets per training epoch")
-    parser.add_argument("--val_epoch_size", type=int, default=10000, help="Number of random triplets per validation epoch") # <-- NEW
-    parser.add_argument("--patience", type=int, default=3, help="Early stopping patience (e.g., 3)") # <-- NEW
+    parser.add_argument("--val_epoch_size", type=int, default=10000, help="Number of random triplets per validation epoch") 
+    parser.add_argument("--patience", type=int, default=3, help="Early stopping patience (e.g., 3)") 
     
     # Model Hyperparameters
     parser.add_argument("--unfreeze_layers", type=int, default=2, help="Number of *last* transformer layers to unfreeze. 0 = freeze all, 2 = unfreeze last 2 (default), -1 = unfreeze all.")
