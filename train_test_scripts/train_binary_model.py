@@ -66,9 +66,12 @@ def train_binary(args):
     else:
         print("Encoder is UNFROZEN (End-to-End Training).")
 
+    # Weighted class loss to overcome slight class imbalance
+    pos_weight = torch.tensor([2.0]).to(device)
+
     # 4. Optimizer & Loss
     # Use BCEWithLogitsLoss for numerical stability (requires raw logits, NO Sigmoid in model)
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate)
     
     # Load Validation
@@ -149,7 +152,7 @@ def train_binary(args):
             early_stop_counter = 0 # Reset counter
             print(f"New Best Model ({acc:.4f})! Saving...")
             os.makedirs(args.output_dir, exist_ok=True)
-            torch.save(model.state_dict(), os.path.join(args.output_dir, "best_binary_model_consensus.pth"))
+            torch.save(model.state_dict(), os.path.join(args.output_dir, "best_binary_model_strict.pth"))
         else:
             early_stop_counter += 1
             print(f"No improvement. Early stopping counter: {early_stop_counter}/{args.patience}")

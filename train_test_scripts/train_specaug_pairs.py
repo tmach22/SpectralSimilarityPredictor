@@ -164,7 +164,7 @@ def train_specaugment_only(args):
             best_val_f1 = val_f1
             early_stop_counter = 0
             os.makedirs(args.output_dir, exist_ok=True)
-            save_path = os.path.join(args.output_dir, "best_specaugment_only_model.pth")
+            save_path = os.path.join(args.output_dir, "best_specaugment_only_model_strict.pth")
             torch.save(model.state_dict(), save_path)
             print(f"New Best F1! Saved to {save_path}")
         else:
