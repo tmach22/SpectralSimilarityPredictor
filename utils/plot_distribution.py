@@ -83,9 +83,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Plot the combined cosine similarity distribution for the 5-bin dataset.")
     
     parser.add_argument("--input_file", type=str, required=True,
-                        help="Path to your BALANCED 5-BIN dataset (e.g., balanced_5bin_dataset.feather).")
+                        help="Path to your BALANCED 5-BIN dataset (e.g., balanced_10bin_dataset.feather).")
     parser.add_argument("--output_image", type=str, required=True,
-                        help="Path to save the output.png file (e.g., combined_5bin_distribution.png).")
+                        help="Path to save the output.png file (e.g., combined_10bin_distribution.png).")
 
     args = parser.parse_args()
     main(args)

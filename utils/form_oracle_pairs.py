@@ -129,7 +129,7 @@ def create_oracle_pairs(input_path: Path, output_path: Path):
 
 
 if __name__ == '__main__':
-    INPUT_FILE = Path('/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/spectra_pairs/mgf_df_mona.feather')
-    OUTPUT_FILE = Path('/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/spectra_pairs/oracle_pairs_all_mona.feather')
+    INPUT_FILE = Path('/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/spectra_pairs/extended_msg_df.feather')
+    OUTPUT_FILE = Path('/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/spectra_pairs/extended_brute_force_pairs.feather')
     
     create_oracle_pairs(INPUT_FILE, OUTPUT_FILE)
