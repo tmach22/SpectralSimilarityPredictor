@@ -24,19 +24,19 @@ def analyze_feather_file(file_path):
         dtype_df = df.dtypes.reset_index()
         dtype_df.columns = ['Column Name', 'Data Type']
         print(dtype_df.to_markdown(index=False))
-        print("-" * 50)
+        # print("-" * 50)
 
-        print("Unique values in column instrument: ")
-        instruments = df['instrument_type'].unique()
-        for instrumnet in instruments:
-            print(f"{instrumnet}")
+        # print("Unique values in column instrument: ")
+        # instruments = df['instrument_type'].unique()
+        # for instrumnet in instruments:
+        #     print(f"{instrumnet}")
 
-        print("-" * 50)
+        # print("-" * 50)
 
-        print("Unique values in column adduct: ")
-        instruments = df['adduct'].unique()
-        for instrumnet in instruments:
-            print(f"{instrumnet}")
+        # print("Unique values in column adduct: ")
+        # instruments = df['adduct'].unique()
+        # for instrumnet in instruments:
+        #     print(f"{instrumnet}")
 
         print("-" * 50)
 

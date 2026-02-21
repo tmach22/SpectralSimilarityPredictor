@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 
 # Load your spectra dataframe
-msg_df = pd.read_feather('/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/spectra_pairs/CASMI_2022_cleaned.feather')
+msg_df = pd.read_feather('/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/spectra_pairs/merged_spec_sim_dataset.feather')
 # (Assuming you load df here)
 
 print(f"Initial shape: {msg_df.shape}")

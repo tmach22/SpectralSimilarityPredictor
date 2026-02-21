@@ -17,8 +17,8 @@ def main(args):
     # --- 1. Setup ---
     os.makedirs(args.output_dir, exist_ok=True)
     safe_threshold_str = str(args.threshold).replace('.', '')
-    report_path = os.path.join(args.output_dir, f"stratified_binary_{safe_threshold_str}_report.txt")
-    output_file_path = os.path.join(args.output_dir, f"stratified_binary_{safe_threshold_str}_dataset.feather")
+    report_path = os.path.join(args.output_dir, f"stratified_binary_{safe_threshold_str}_spec_sim_report.txt")
+    output_file_path = os.path.join(args.output_dir, f"stratified_binary_{safe_threshold_str}_spec_sim_dataset.feather")
     
     try:
         summary_file = open(report_path, "w")

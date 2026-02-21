@@ -3,173 +3,217 @@ import argparse
 import os
 import time
 import numpy as np
+import pyarrow.feather as feather
+import pyarrow.ipc
+import gc
+from tqdm import tqdm
 
 def main(args):
-    """
-    ### MODIFIED ###
-    Creates a new, 10-bin balanced dataset from the heavily skewed
-    brute-force file by sampling equally from 10 bins of 0.1 width.
-    """
-    print(f"--- Starting 10-Bin Balanced Dataset Creation (for Regression) ---")
+    print(f"--- Starting Memory-Efficient Balanced Dataset Creation ---")
     
-    # --- 1. Setup ---
     os.makedirs(args.output_dir, exist_ok=True)
-    ### MODIFIED ###
-    report_path = os.path.join(args.output_dir, "balanced_10bin_dataset_report.txt")
-    output_file_path = os.path.join(args.output_dir, "balanced_10bin_dataset.feather")
-    ### END MODIFIED ###
+    report_path = os.path.join(args.output_dir, "balanced_dataset_report.txt")
+    output_file_path = os.path.join(args.output_dir, "balanced_10bin_spec_sim_dataset.feather")
     
-    try:
-        summary_file = open(report_path, "w")
-    except Exception as e:
-        print(f"Fatal Error: Could not open report file {report_path} for writing. Error: {e}")
-        return
-
-    print(f"Loading full (skewed) dataset from: {args.input_file}")
-    print("This may take a significant amount of time and RAM...")
+    summary_file = open(report_path, "w")
     start_time = time.time()
-    try:
-        df = pd.read_feather(args.input_file)
-    except Exception as e:
-        print(f"Fatal Error: Could not read input file {args.input_file}. Error: {e}")
-        summary_file.close()
-        return
-        
-    print(f"Loaded {len(df):,} total pairs in {time.time() - start_time:.2f}s")
-    
-    ### MODIFIED ###
-    # --- 2. Define 10 Populations ---
-    print(f"\nDefining 10 populations based on 0.1-width bins:")
-    
-    # Define bin edges and labels
-    bins_defs = [
-        {"label": "0.0-0.1", "query": "cosine_similarity >= 0.0 and cosine_similarity < 0.1"},
-        {"label": "0.1-0.2", "query": "cosine_similarity >= 0.1 and cosine_similarity < 0.2"},
-        {"label": "0.2-0.3", "query": "cosine_similarity >= 0.2 and cosine_similarity < 0.3"},
-        {"label": "0.3-0.4", "query": "cosine_similarity >= 0.3 and cosine_similarity < 0.4"},
-        {"label": "0.4-0.5", "query": "cosine_similarity >= 0.4 and cosine_similarity < 0.5"},
-        {"label": "0.5-0.6", "query": "cosine_similarity >= 0.5 and cosine_similarity < 0.6"},
-        {"label": "0.6-0.7", "query": "cosine_similarity >= 0.6 and cosine_similarity < 0.7"},
-        {"label": "0.7-0.8", "query": "cosine_similarity >= 0.7 and cosine_similarity < 0.8"},
-        {"label": "0.8-0.9", "query": "cosine_similarity >= 0.8 and cosine_similarity < 0.9"},
-        {"label": "0.9-1.0", "query": "cosine_similarity >= 0.9 and cosine_similarity <= 1.0"} # Include 1.0
-    ]
-    ### END MODIFIED ###
-    
-    dataframes = {}
-    counts = {}
 
-    for bin_def in bins_defs:
-        label = bin_def["label"]
-        query_str = bin_def["query"]
-        print(f"  Populating Bin '{label}' ({query_str})...")
-        
-        df_bin = df.query(query_str).copy()
-        dataframes[label] = df_bin
-        counts[label] = len(df_bin)
-        print(f"    Found {counts[label]:,} pairs.")
+    # =========================================================================
+    # PASS 1: LIGHTWEIGHT SCAN (Load only Similarity Column)
+    # =========================================================================
+    print(f"PASS 1: Loading ONLY 'cosine_similarity' column to determine splits...")
+    print(f"Input: {args.input_file}")
 
-    ### MODIFIED ###
-    # --- 3. Perform 1:1:...:1 Sampling (10 bins) ---
+    # Open the file object to allow batch reading later
+    source = pyarrow.memory_map(args.input_file, 'r')
+    reader = pyarrow.ipc.RecordBatchFileReader(source)
+    total_file_rows = reader.stats['num_rows'] if 'num_rows' in reader.stats else None
     
-    # Set the anchor bin to the highest similarity bin, as requested
+    # If using only a part of the file
+    if args.max_rows and total_file_rows:
+        limit_rows = min(int(args.max_rows), total_file_rows)
+        print(f"   -> Limiting scan to first {limit_rows:,} rows (Part of file).")
+    else:
+        limit_rows = None
+
+    # Load just the similarity column
+    # PyArrow allows us to read specific columns without loading the whole table
+    if limit_rows:
+        # If limiting, we read the table partially (this might still be heavy if not careful, 
+        # so we trust the OS paging, or we read the sim col fully and slice it)
+        sim_table = feather.read_table(args.input_file, columns=['cosine_similarity'])
+        df_sim = sim_table.to_pandas().iloc[:limit_rows]
+    else:
+        sim_table = feather.read_table(args.input_file, columns=['cosine_similarity'])
+        df_sim = sim_table.to_pandas()
+    
+    # Free Arrow memory
+    del sim_table
+    gc.collect()
+
+    print(f"   -> Analyzed {len(df_sim):,} similarity scores.")
+
+    # =========================================================================
+    # LOGIC: Define Bins & Sample Indices
+    # =========================================================================
+    print(f"\nCalculating Bins & Sample Indices...")
+    
+    # Define bins
+    bins_edges = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.01]
+    labels = ["0.0-0.1", "0.1-0.2", "0.2-0.3", "0.3-0.4", "0.4-0.5", 
+              "0.5-0.6", "0.6-0.7", "0.7-0.8", "0.8-0.9", "0.9-1.0"]
+    
+    # Assign bins
+    df_sim['bin'] = pd.cut(df_sim['cosine_similarity'], bins=bins_edges, labels=labels, right=False)
+    
+    # Count
+    counts = df_sim['bin'].value_counts()
     anchor_bin_label = "0.9-1.0"
-    n_sample_size = counts[anchor_bin_label]
-    ### END MODIFIED ###
-    
+    n_sample_size = counts.get(anchor_bin_label, 0)
+
     if n_sample_size == 0:
-        print(f"\nFatal Error: Anchor bin ({anchor_bin_label}) has 0 samples. Cannot proceed.")
-        summary_file.close()
+        print(f"FATAL: Anchor bin {anchor_bin_label} is empty. Cannot balance.")
         return
-        
-    print(f"\nUsing anchor bin '{anchor_bin_label}' as sample size: {n_sample_size:,} pairs.")
 
-    sampled_dataframes = []
+    print(f"   -> Anchor Bin '{anchor_bin_label}' count: {n_sample_size:,}")
+    print(f"   -> Target Dataset Size: ~{n_sample_size * 10:,} pairs")
+
+    # Select INDICES to keep
+    indices_to_keep = []
     
-    for bin_def in bins_defs:
-        label = bin_def["label"]
-        df_bin = dataframes[label]
-        n_bin = counts[label]
-
-        if n_bin == 0:
-            print(f"Warning: Bin '{label}' has 0 samples. Final dataset will be missing this bin.")
-            continue
+    for label in labels:
+        # Get indices for this bin
+        bin_indices = df_sim[df_sim['bin'] == label].index.values
+        n_bin = len(bin_indices)
         
-        # This is the anchor bin, as specified. We take all its samples.
-        if label == anchor_bin_label:
-            print(f"Using all {n_bin:,} pairs from anchor bin '{label}'.")
-            sampled_dataframes.append(df_bin)
+        if n_bin == 0:
+            print(f"   Warning: Bin {label} is empty.")
             continue
             
-        # For all other bins, sample to match the anchor size.
-        # This requires OVERSAMPLING (replace=True) if the bin is smaller than the anchor.
-        if n_bin < n_sample_size:
-            print(f"Warning: Bin '{label}' ({n_bin:,}) is smaller than anchor ({n_sample_size:,}). Oversampling with replacement.")
-            df_sampled = df_bin.sample(n=n_sample_size, random_state=args.seed, replace=True)
+        if label == anchor_bin_label:
+            # Keep all anchor
+            selected = bin_indices
+        elif n_bin < n_sample_size:
+            # Oversample (Repeat indices)
+            selected = np.random.choice(bin_indices, size=n_sample_size, replace=True)
         else:
-            # Undersample (no replacement)
-            print(f"Sampling {n_sample_size:,} pairs from bin '{label}' ({n_bin:,} available)...")
-            df_sampled = df_bin.sample(n=n_sample_size, random_state=args.seed, replace=False)
+            # Undersample
+            selected = np.random.choice(bin_indices, size=n_sample_size, replace=False)
+            
+        indices_to_keep.append(selected)
+
+    # Flatten array of indices
+    all_target_indices = np.concatenate(indices_to_keep)
+    
+    # To use efficient batch filtering, we need a way to check membership fast.
+    # However, since we might have duplicates (oversampling), we need to handle that.
+    # Strategy: 
+    # 1. We identify UNIQUE rows we need to load from disk.
+    # 2. We load them.
+    # 3. We reconstruct the balanced dataset (including duplicates) in memory at the end.
+    
+    unique_indices_to_load = np.unique(all_target_indices)
+    unique_indices_set = set(unique_indices_to_load) # For O(1) lookup
+    
+    print(f"   -> Identified {len(unique_indices_to_load):,} unique rows to load from disk.")
+    
+    # Cleanup memory
+    del df_sim
+    del indices_to_keep
+    gc.collect()
+
+    # =========================================================================
+    # PASS 2: BATCH EXTRACTION (Heavy Lifting)
+    # =========================================================================
+    print(f"\nPASS 2: iterating batches to extract data...")
+    
+    accumulated_dfs = []
+    current_row_idx = 0
+    num_batches = reader.num_record_batches
+    
+    for i in tqdm(range(num_batches), desc="Reading Batches"):
+        # Read one batch (low memory)
+        batch = reader.get_batch(i)
+        batch_len = batch.num_rows
         
-        sampled_dataframes.append(df_sampled)
+        # Calculate global row indices for this batch
+        batch_indices = range(current_row_idx, current_row_idx + batch_len)
+        
+        # Check if ANY index in this batch is in our target set
+        # (Intersection check)
+        batch_indices_set = set(batch_indices)
+        if batch_indices_set.isdisjoint(unique_indices_set):
+            # Optimization: Skip converting to pandas if no rows needed
+            current_row_idx += batch_len
+            del batch
+            continue
+            
+        # Convert to pandas
+        df_batch = batch.to_pandas()
+        
+        # Create a mapping column to filter
+        df_batch['global_idx'] = np.arange(current_row_idx, current_row_idx + batch_len)
+        
+        # Filter: Keep only rows present in our unique target list
+        df_filtered = df_batch[df_batch['global_idx'].isin(unique_indices_set)].copy()
+        
+        if not df_filtered.empty:
+            # Drop the helper column to save RAM
+            df_filtered.set_index('global_idx', inplace=True)
+            accumulated_dfs.append(df_filtered)
+        
+        current_row_idx += batch_len
+        
+        # Explicit Memory Cleanup
+        del batch
+        del df_batch
+        del df_filtered
+        
+        # If we passed the limit, stop reading
+        if limit_rows and current_row_idx >= limit_rows:
+            break
 
-    # --- 4. Combine and Save ---
-    print("Combining and shuffling final dataset...")
-    df_balanced = pd.concat(sampled_dataframes)
+    # =========================================================================
+    # RECONSTRUCTION & SAVING
+    # =========================================================================
+    print(f"\nReconstructing balanced dataset...")
     
-    # Shuffle the final combined dataset
-    df_balanced = df_balanced.sample(frac=1, random_state=args.seed).reset_index(drop=True)
+    # 1. Concat unique loaded rows
+    df_unique_pool = pd.concat(accumulated_dfs)
+    del accumulated_dfs
+    gc.collect()
     
-    total_balanced_count = len(df_balanced)
+    # 2. Re-assemble the balanced set (handling the Oversampling duplicates)
+    # We map the global indices back to the rows we loaded
+    print("Applying oversampling and shuffling...")
     
-    try:
-        df_balanced.to_feather(output_file_path)
-        ### MODIFIED ###
-        print(f"\nSuccessfully saved balanced 10-bin dataset to: {output_file_path}")
-        ### END MODIFIED ###
-    except Exception as e:
-        print(f"\nError saving final file: {e}")
-        summary_file.close()
-        return
-
-    ### MODIFIED ###
-    # --- 5. Write Final Report ---
-    report = "--- Balanced 10-Bin Dataset Report ---\n"
-    report += f"Source file: {args.input_file}\n"
-    report += f"Total Original Pairs: {len(df):,}\n"
-    report += "\n--- New Balanced Dataset ---\n"
-    report += f"Anchor Bin: '{anchor_bin_label}' (Target Size: {n_sample_size:,})\n"
-    report += f"Total New Pairs: {total_balanced_count:,}\n\n"
+    # df_unique_pool is indexed by 'global_idx'. 
+    # We can perform a loc lookup using the list of target indices.
+    # This automatically handles the duplication for oversampling.
+    df_final = df_unique_pool.loc[all_target_indices].reset_index(drop=True)
     
-    # Calculate the final distribution for the report
-    final_bins = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.01] # Use 1.01 to include 1.0
-    final_labels = ["0.0-0.1", "0.1-0.2", "0.2-0.3", "0.3-0.4", "0.4-0.5", 
-                    "0.5-0.6", "0.6-0.7", "0.7-0.8", "0.8-0.9", "0.9-1.0"]
-    df_balanced['temp_bin'] = pd.cut(df_balanced['cosine_similarity'], bins=final_bins, labels=final_labels, right=False)
+    # Shuffle
+    df_final = df_final.sample(frac=1, random_state=args.seed).reset_index(drop=True)
     
-    report += "Final Distribution in Saved File:\n"
-    report += f"{df_balanced['temp_bin'].value_counts().sort_index()}\n"
+    print(f"Final Dataset Shape: {df_final.shape}")
     
-    report += f"\nFile saved to: {output_file_path}\n"
+    # Save
+    print(f"Saving to {output_file_path}...")
+    df_final.to_feather(output_file_path)
     
-    print(f"\n{report}")
-    summary_file.write(report)
+    # Report
+    print(f"\nDone! Time taken: {time.time() - start_time:.2f}s")
+    summary_file.write(f"Source: {args.input_file}\n")
+    summary_file.write(f"Rows Scanned: {current_row_idx}\n")
+    summary_file.write(f"Final Count: {len(df_final)}\n")
     summary_file.close()
-    ### END MODIFIED ###
 
-
-# --- Standalone Execution Block ---
 if __name__ == '__main__':
-    ### MODIFIED ###
-    parser = argparse.ArgumentParser(description="Create a 10-bin balanced dataset (1:1:...:1) for regression.")
-    parser.add_argument("--input_file", type=str, required=True,
-                        help="Path to your FULL, SKEWED combined feather file (e.g., brute_force_combined.feather).")
-    parser.add_argument("--output_dir", type=str, required=True,
-                        help="Directory to save the new 'balanced_10bin_dataset.feather' and report.")
-    # Removed the threshold arguments as they are no longer needed
-    parser.add_argument("--seed", type=int, default=42,
-                        help="Random seed for reproducible sampling.")
-    ### END MODIFIED ###
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input_file", type=str, required=True, help="Path to large feather file.")
+    parser.add_argument("--output_dir", type=str, required=True, help="Output directory.")
+    parser.add_argument("--max_rows", type=int, default=None, help="Optional: Only use the first N rows of the file to save memory/time.")
+    parser.add_argument("--seed", type=int, default=42)
+    
     args = parser.parse_args()
     main(args)

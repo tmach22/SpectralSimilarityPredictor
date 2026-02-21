@@ -46,6 +46,10 @@ def inspect_pickle(file_path):
             print("Column names:")
             print(list(data.columns[:]))
 
+            # print("-"*50)
+            # print(data[data["spec_id" == "MoNA_14290"]])
+            # print("-"*50)
+
             print("First 5 rows:")
             print(data.head())
             

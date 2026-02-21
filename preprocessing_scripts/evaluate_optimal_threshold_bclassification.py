@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(cwd.parent), 'tmach007/massforme
 
 # Import custom modules
 try:
-    from classifier_siamesemodel import SiameseSpectralSimilarityModel
+    from classifier_siamesemodel_new import SiameseSpectralSimilarityModel
     from updated_train import merge_configs
     from binary_data_loader import BinaryClassificationDataset, binary_collate_fn
 except ImportError as e:
@@ -29,7 +29,7 @@ except ImportError as e:
 
 def test_binary(args):
     device = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu")
-    print(f"--- Starting Binary Model Testing ---")
+    print(f"--- Starting Binary Model Testing (Mass Gated) ---")
     print(f"Using device: {device}")
 
     # --- 2. Load Data ---
@@ -53,7 +53,7 @@ def test_binary(args):
     print(f"Test dataset size: {len(test_dataset)}")
 
     # --- 3. Initialize Model ---
-    print("Initializing Model Architecture...")
+    print("Initializing Mass Gated Model Architecture...")
     with open(args.template_config_path, 'r') as f: template_config = yaml.safe_load(f)
     with open(args.custom_config_path, 'r') as f: custom_config = yaml.safe_load(f)
     full_config = merge_configs(template_config, custom_config)
@@ -67,6 +67,13 @@ def test_binary(args):
     # --- 4. Load Trained Binary Weights ---
     print(f"Loading trained weights from: {args.binary_model_path}")
     state_dict = torch.load(args.binary_model_path, map_location=device)
+    
+    # Handle possible nested state_dict keys (Robust loading)
+    if 'state_dict' in state_dict:
+        state_dict = state_dict['state_dict']
+    elif 'best_model_sd' in state_dict:
+        state_dict = state_dict['best_model_sd']
+        
     model.load_state_dict(state_dict)
     model.eval()
 
@@ -77,16 +84,19 @@ def test_binary(args):
     all_labels = []
     
     with torch.no_grad():
-        for batch_A, batch_B, batch_meta, labels in tqdm(test_loader, desc="Testing"):
-            # Move to device
+        # UPDATED: Unpacking 5 items instead of 4
+        for batch_A, batch_B, batch_meta, mass_diffs, labels in tqdm(test_loader, desc="Testing"):
+            
+            # Move all inputs to device
             for k in batch_A: batch_A[k] = batch_A[k].to(device)
             for k in batch_B: batch_B[k] = batch_B[k].to(device)
             batch_meta = batch_meta.to(device)
+            mass_diffs = mass_diffs.to(device) # UPDATED: Move mass_diffs to GPU
             
-            # Forward pass
-            logits = model(batch_A, batch_B, batch_meta).squeeze()
+            # Forward pass (UPDATED: Pass mass_diffs to model)
+            logits = model(batch_A, batch_B, batch_meta, mass_diffs).squeeze()
             
-            # Apply Sigmoid (since we removed it from the model class)
+            # Apply Sigmoid
             probs = torch.sigmoid(logits)
 
             # Default Threshold at 0.5 (Just for standard metrics)
@@ -136,7 +146,6 @@ def test_binary(args):
     precisions, recalls, thresholds = precision_recall_curve(all_labels, all_probs)
     
     # A. Find Best F1 Score (The "Sweet Spot")
-    # Note: thresholds is 1 element shorter than precision/recall
     f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-10)
     best_idx = np.argmax(f1_scores)
     best_thresh = thresholds[best_idx]
@@ -148,9 +157,7 @@ def test_binary(args):
 
     # B. Find High Precision Operating Point (Target ~0.85)
     target_prec = 0.85
-    # Find index where precision is closest to target
     idx_target = np.argmin(np.abs(precisions - target_prec))
-    # Ensure we pick a valid threshold index (precisions array is length n_thresholds + 1)
     if idx_target >= len(thresholds): idx_target = len(thresholds) - 1
     
     target_thresh = thresholds[idx_target]
@@ -161,7 +168,7 @@ def test_binary(args):
 
     # C. Plotting
     plt.figure(figsize=(10, 8))
-    plt.plot(recalls, precisions, marker='.', label='Siamese Model')
+    plt.plot(recalls, precisions, marker='.', label='Mass Gated Model')
     
     # Mark the points
     plt.scatter(recalls[best_idx], precisions[best_idx], s=100, c='red', label=f'Best F1 (Th={best_thresh:.2f})', zorder=5)
