@@ -8,8 +8,9 @@ import os
 import sys
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from torch.utils.data import DataLoader
 
-# Setup paths
+# --- 1. SETUP PATHS ---
 from pathlib import Path
 cwd = Path.cwd()
 sys.path.insert(0, os.path.join(cwd, 'data_loaders'))
@@ -17,92 +18,92 @@ sys.path.insert(0, os.path.join(cwd, 'model'))
 sys.path.insert(0, os.path.join(cwd, 'train_test_scripts'))
 sys.path.insert(0, os.path.join(os.path.dirname(cwd.parent), 'tmach007/massformer/src/massformer'))
 
-# Import your custom modules
-from classifier_siamesemodel import SiameseSpectralSimilarityModel
-from updated_train import merge_configs
-from binary_data_loader import BinaryClassificationDataset, binary_collate_fn
+try:
+    # Ensure we use the NEW model file with Mass Gating
+    from classifier_siamesemodel_new import SiameseSpectralSimilarityModel
+    from updated_train import merge_configs
+    from binary_data_loader import BinaryClassificationDataset, binary_collate_fn
+except ImportError as e:
+    print(f"Error importing modules: {e}")
+    sys.exit(1)
 
-# --- SPECAUGMENT UTILITY ---
-def apply_spec_augment(spectra_tensor, mask_prob=0.15, intensity_jitter=0.1):
+# --- 2. AUGMENTATION FUNCTION ---
+def apply_spec_augment(batch_dict, mask_prob=0.15, device='cuda'):
     """
-    Applies Peak Masking and Intensity Jitter to a batch of spectra.
-    Input: spectra_tensor [Batch, Bins]
-    Output: augmented_spectra [Batch, Bins]
+    Applies Peak Masking (SpecAugment) to Graph/Feature dictionaries.
     """
-    batch_size, bins = spectra_tensor.shape
-    device = spectra_tensor.device
+    if not isinstance(batch_dict, dict): return batch_dict
     
-    # 1. Peak Masking (Dropout)
-    # Create a binary mask where 1 = keep, 0 = drop
-    mask = torch.rand(batch_size, bins, device=device) > mask_prob
-    masked_spectra = spectra_tensor * mask.float()
+    target_keys = ['x', 'edge_attr', 'intensities', 'peaks', 'spectrum']
     
-    # 2. Intensity Jitter (Noise)
-    # Add random noise: spectrum = spectrum * (1 + noise)
-    noise = torch.FloatTensor(batch_size, bins).uniform_(-intensity_jitter, intensity_jitter).to(device)
-    augmented_spectra = masked_spectra * (1 + noise)
+    augmented_batch = {}
     
-    # Ensure non-negative and normalized (Max scaling per spectrum)
-    augmented_spectra = torch.clamp(augmented_spectra, min=0.0)
-    max_vals = augmented_spectra.max(dim=1, keepdim=True)[0]
-    max_vals[max_vals == 0] = 1.0 # Avoid div by zero
-    augmented_spectra = augmented_spectra / max_vals
-    
-    return augmented_spectra
+    for key, val in batch_dict.items():
+        if key in target_keys and isinstance(val, torch.Tensor) and val.is_floating_point():
+            mask = torch.bernoulli(torch.full_like(val, 1 - mask_prob)).to(device)
+            augmented_batch[key] = val * mask
+        else:
+            augmented_batch[key] = val
+            
+    return augmented_batch
 
-def train_binary(args):
+def train_specaugment_only(args):
     device = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu")
-    print(f"--- Starting Binary Classification Training with SpecAugment ---")
-    print(f"Early Stopping Patience: {args.patience} epochs")
+    print(f"--- Starting Phase 5b: Full SpecAugment Fine-Tuning (Mass Gated) ---")
+    print(f"Strategy: Train on FULL dataset with Peak Masking (p={args.mask_prob})")
     
-    # 1. Config & Model
+    # 3. Config & Model Init
     with open(args.template_config_path, 'r') as f: template_config = yaml.safe_load(f)
     with open(args.custom_config_path, 'r') as f: custom_config = yaml.safe_load(f)
     full_config = merge_configs(template_config, custom_config)
     
-    # Initialize dataset first to get meta dim
-    # Note: Dataset loads PAIRS of indices. We fetch actual spectra in the loop.
+    print("Loading FULL Training Data...")
     train_dataset = BinaryClassificationDataset(args.train_pairs_path, args.spec_data_path, args.mol_data_path)
+    val_dataset = BinaryClassificationDataset(args.val_pairs_path, args.spec_data_path, args.mol_data_path)
+    
+    # Dynamically calculate meta dim
     spec_meta_dim = train_dataset[0][2].shape[1]
     
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=binary_collate_fn, num_workers=args.num_workers)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=binary_collate_fn, num_workers=args.num_workers)
+
     print("Initializing Model...")
     model = SiameseSpectralSimilarityModel(
         model_config=full_config.get('model', {}),
-        checkpoint_path=args.checkpoint_path, # Base MassFormer weights
+        checkpoint_path=args.checkpoint_path, 
         spec_meta_dim=spec_meta_dim
     ).to(device)
     
-    # 2. Load PRE-FINETUNED Encoder Weights (From Triplet Loss Phase)
-    if args.finetuned_encoder_path:
-        print(f"Loading FINE-TUNED encoder from: {args.finetuned_encoder_path}")
-        ft_weights = torch.load(args.finetuned_encoder_path, map_location=device)
+    # 4. Load Weights (Start from Champion)
+    print(f"Loading Weights from: {args.start_weights}")
+    state_dict = torch.load(args.start_weights, map_location=device)
+    
+    if 'state_dict' in state_dict: state_dict = state_dict['state_dict']
+    elif 'best_model_sd' in state_dict: state_dict = state_dict['best_model_sd']
         
-        # Handle the dictionary structure
-        if 'best_model_sd' in ft_weights:
-            ft_weights = ft_weights['best_model_sd']
-            
-        # Load into the encoder submodule
-        missing, unexpected = model.encoder.load_state_dict(ft_weights, strict=False)
-        print(f"Fine-tuned weights loaded. Missing: {len(missing)}, Unexpected: {len(unexpected)}")
-    else:
-        print("No fine-tuned path provided. Using ORIGINAL MassFormer weights.")
+    try:
+        model.load_state_dict(state_dict, strict=False)
+        print("Successfully loaded weights.")
+    except RuntimeError as e:
+        print(f"WARNING: Slight mismatch in loading weights: {e}")
 
-    # 3. Freeze/Unfreeze Logic
-    # CRITICAL: For SpecAugment to work, the encoder MUST be unfrozen to adapt to the noise.
-    if args.freeze_encoder:
-        print("WARNING: Freezing encoder with SpecAugment is not recommended. Unfreezing...")
-        
-     # 5. Unfreezing Strategy (Head + Last 2 Layers)
-    print("\n--- Unfreezing Head + Last 2 Graph Layers ---")
+    # 5. Unfreezing Strategy
+    print("\n--- Unfreezing Head, Gating Branch + Last 2 Graph Layers ---")
     for param in model.parameters(): param.requires_grad = False
     
-    # Head
-    for param in model.similarity_head.parameters(): param.requires_grad = True
+    # Unfreeze Similarity Head
+    for param in model.head.parameters(): param.requires_grad = True
     
-    # Encoder Layers
+    # Unfreeze Mass Penalty Head (Important!)
+    for param in model.mass_gate.parameters(): param.requires_grad = True
+    
+    # Unfreeze Encoder Layers
     try:
+        # Access the underlying graph layers
+        # Path might vary based on your exact hierarchy, using generic traversal or try/except
         encoder_layers = model.encoder.encoder.encoder.graph_encoder.layers
         total_layers = len(encoder_layers)
+        print(f"Unfreezing last 2 layers of {total_layers}...")
         for i in range(total_layers - 2, total_layers):
             for param in encoder_layers[i].parameters():
                 param.requires_grad = True
@@ -110,147 +111,105 @@ def train_binary(args):
         print("Fallback: Unfreezing full encoder.")
         for param in model.encoder.parameters(): param.requires_grad = True
 
-    # 4. Optimizer & Loss
-    criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate) # Optimizing EVERYTHING
-    
-    # Load Validation
-    val_dataset = BinaryClassificationDataset(args.val_pairs_path, args.spec_data_path, args.mol_data_path)
-    
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=True, 
-        collate_fn=binary_collate_fn, num_workers=args.num_workers
-    )
-    val_loader = torch.utils.data.DataLoader(
-        val_dataset, batch_size=args.batch_size, shuffle=False, 
-        collate_fn=binary_collate_fn, num_workers=args.num_workers
-    )
+    # 6. Optimizer & Loss
+    # Low LR for fine-tuning
+    optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-5) 
+    # Use Weighted Loss if class imbalance persists, otherwise standard BCE
+    pos_weight = torch.tensor([2.0]).to(device)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-    # Setup Tracking
-    best_val_f1 = 0.0 # optimizing for F1 now
+    # 7. Training Loop
+    best_val_f1 = 0.0
     early_stop_counter = 0
     
-    # Cosine Similarity function for dynamic labeling
-    cosine_sim = nn.CosineSimilarity(dim=1, eps=1e-6)
-
+    print(f"\nTraining for {args.epochs} epochs with SpecAugment...")
+    
     for epoch in range(args.epochs):
-        print(f"\nEpoch {epoch+1}/{args.epochs}")
-        
-        # --- Train ---
         model.train()
         train_loss = 0.0
-        all_preds, all_labels = [], []
         
-        for batch_A, batch_B, batch_meta, original_labels in tqdm(train_loader, desc="Training (SpecAug)"):
-            # Move data to device
+        # UPDATED: Unpack 5 items (including mass_diffs)
+        for batch_A, batch_B, batch_meta, batch_mass_diffs, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}"):
             for k in batch_A: batch_A[k] = batch_A[k].to(device)
             for k in batch_B: batch_B[k] = batch_B[k].to(device)
             batch_meta = batch_meta.to(device)
-            
-            # --- SPECAUGMENT LOGIC ---
-            # NOTE: To implement this properly, we need the ACTUAL SPECTRA tensors here.
-            # If batch_A/B are Graph dictionaries, we can't augment the spectra inside them easily 
-            # unless the DataLoader provides the spectra separately.
-            # Assuming your DataLoader is standard, it might not yield spectra tensors.
-            # IF DATA LOADER DOES NOT YIELD SPECTRA, SpecAugment acts as "Latent Noise" (Dropout).
-            
-            # Since changing DataLoader is hard, we will apply augmentation to the LABELS 
-            # if we can't access spectra, OR we rely on the model's internal robustness.
-            
-            # However, for this script to work as described in the report, 
-            # let's assume standard training without modifying the DataLoader structure 
-            # but ensuring the ENCODER sees the noise.
-            
-            # Standard Forward Pass
+            batch_mass_diffs = batch_mass_diffs.to(device)
+            labels = labels.to(device).float()
+
             optimizer.zero_grad()
-            logits = model(batch_A, batch_B, batch_meta).squeeze() # Shape [Batch]
             
-            # Use the original labels (since we can't easily re-compute cosine without raw spectra)
-            # OR if you have raw spectra in the batch, use apply_spec_augment here.
-            # For now, we stick to the provided labels but rely on the Graph Encoder's dropout.
-            labels = original_labels.to(device) 
+            # --- APPLY AUGMENTATION ---
+            aug_A = apply_spec_augment(batch_A, mask_prob=args.mask_prob, device=device)
+            aug_B = apply_spec_augment(batch_B, mask_prob=args.mask_prob, device=device)
+            
+            # Forward (Pass Mass Diff)
+            logits = model(aug_A, aug_B, batch_meta, batch_mass_diffs).view(-1)
             
             loss = criterion(logits, labels)
             loss.backward()
             optimizer.step()
-            
             train_loss += loss.item()
             
-            # Store for metrics
-            preds = torch.sigmoid(logits) > 0.5
-            all_preds.extend(preds.cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
-            
-        train_acc = accuracy_score(all_labels, all_preds)
-        train_f1 = f1_score(all_labels, all_preds)
-        print(f"Train Loss: {train_loss/len(train_loader):.4f} | Train Acc: {train_acc:.4f} | Train F1: {train_f1:.4f}")
-
-        # --- Val ---
+        print(f"Train Loss: {train_loss/len(train_loader):.4f}")
+        
+        # Validation (NO Augmentation - Clean Test)
         model.eval()
-        val_preds, val_probs, val_labels = [], [], []
+        val_preds, val_labels = [], []
         
         with torch.no_grad():
-            for batch_A, batch_B, batch_meta, labels in tqdm(val_loader, desc="Validating"):
+            for batch_A, batch_B, batch_meta, batch_mass_diffs, labels in tqdm(val_loader, desc="Validating"):
                 for k in batch_A: batch_A[k] = batch_A[k].to(device)
                 for k in batch_B: batch_B[k] = batch_B[k].to(device)
                 batch_meta = batch_meta.to(device)
-                
-                logits = model(batch_A, batch_B, batch_meta).squeeze()
-                probs = torch.sigmoid(logits)
-                preds = probs > 0.5
-                
-                val_preds.extend(preds.cpu().numpy())
-                val_probs.extend(probs.cpu().numpy())
-                val_labels.extend(labels.cpu().numpy())
+                batch_mass_diffs = batch_mass_diffs.to(device)
+                labels = labels.to(device).float()
 
-        # Metrics
-        acc = accuracy_score(val_labels, val_preds)
-        f1 = f1_score(val_labels, val_preds)
-        roc = roc_auc_score(val_labels, val_probs)
+                # Forward (Pass Mass Diff)
+                logits = model(batch_A, batch_B, batch_meta, batch_mass_diffs).view(-1)
+                
+                preds = (torch.sigmoid(logits) > 0.5).float()
+                val_preds.extend(preds.cpu().numpy())
+                val_labels.extend(labels.cpu().numpy())
         
-        print(f"Val Acc: {acc:.4f} | Val F1: {f1:.4f} | ROC-AUC: {roc:.4f}")
+        val_f1 = f1_score(val_labels, val_preds)
+        val_acc = accuracy_score(val_labels, val_preds)
+        print(f"Val F1: {val_f1:.4f} | Val Acc: {val_acc:.4f}")
         
-        # --- Early Stopping & Saving ---
-        if f1 > best_val_f1: # Optimizing F1 is better for imbalanced data
-            best_val_f1 = f1
-            early_stop_counter = 0 
-            print(f"New Best Model (F1: {f1:.4f})! Saving...")
+        if val_f1 > best_val_f1:
+            best_val_f1 = val_f1
+            early_stop_counter = 0
             os.makedirs(args.output_dir, exist_ok=True)
-            torch.save(model.state_dict(), os.path.join(args.output_dir, "best_model_specaug.pth"))
+            save_path = os.path.join(args.output_dir, "best_gated_specaug_model.pth")
+            torch.save(model.state_dict(), save_path)
+            print(f"New Best F1! Saved to {save_path}")
         else:
             early_stop_counter += 1
-            print(f"No improvement. Counter: {early_stop_counter}/{args.patience}")
-            
-        if early_stop_counter >= args.patience:
-            print("Early stopping triggered.")
-            break
+            print(f"No improvement ({early_stop_counter}/{args.patience})")
+            if early_stop_counter >= args.patience:
+                print("Early stopping triggered.")
+                break
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    
-    # Data Paths
+    # Paths
     parser.add_argument("--train_pairs_path", type=str, required=True)
     parser.add_argument("--val_pairs_path", type=str, required=True)
     parser.add_argument("--spec_data_path", type=str, required=True)
     parser.add_argument("--mol_data_path", type=str, required=True)
-    
-    # Model Paths
-    parser.add_argument("--finetuned_encoder_path", type=str, default=None, help="Path to best_finetuned_encoder.pkl")
     parser.add_argument("--template_config_path", type=str, required=True)
     parser.add_argument("--custom_config_path", type=str, required=True)
-    parser.add_argument("--checkpoint_path", type=str, required=True, help="Base MassFormer checkpoint")
-    parser.add_argument("--output_dir", type=str, default="./binary_model_specaug")
+    parser.add_argument("--checkpoint_path", type=str, required=True)
     
-    # Training Args
-    parser.add_argument("--learning_rate", type=float, default=5e-5) # Lower LR for end-to-end
-    parser.add_argument("--epochs", type=int, default=50)
-    parser.add_argument("--batch_size", type=int, default=32)
+    # Model Weights (Start from Best Gated Model)
+    parser.add_argument("--start_weights", type=str, required=True)
+    
+    parser.add_argument("--output_dir", type=str, default="./specaugment_gated")
+    parser.add_argument("--epochs", type=int, default=20) 
     parser.add_argument("--patience", type=int, default=3)
-    
-    # System Args
+    parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--num_workers", type=int, default=8)
-    parser.add_argument("--freeze_encoder", action='store_true') # Kept for compat, but logic overrides it
-
+    parser.add_argument("--mask_prob", type=float, default=0.15)
+    
     args = parser.parse_args()
-    train_binary(args)
+    train_specaugment_only(args)
