@@ -162,17 +162,12 @@ class BinaryClassificationDataset(Dataset):
 
             spec_meta = self._get_spec_meta_fixed(spec_A)
             
-            # --- NEW: Calculate Mass Difference ---
-            mass_A = float(spec_A.get("prec_mz", 0.0))
-            mass_B = float(spec_B.get("prec_mz", 0.0))
-            # Normalize by 100 Da to keep values in a nice range for the NN
-            mass_diff = abs(mass_A - mass_B) / 100.0
-            mass_diff_tensor = torch.tensor([mass_diff], dtype=torch.float32)
+            # --- MASS DIFFERENCE REMOVED ---
             
             label = torch.tensor(pair_info['label'], dtype=torch.float32)
             
-            # Return 5 items now
-            return graph_A, graph_B, spec_meta, mass_diff_tensor, label
+            # Return 4 items (Original format)
+            return graph_A, graph_B, spec_meta, label
 
         except Exception as e:
             # Fallback to random sample
@@ -180,16 +175,15 @@ class BinaryClassificationDataset(Dataset):
             return self.__getitem__(new_idx)
 
 def binary_collate_fn(batch):
-    # Unpack 5 items
-    graphs_A, graphs_B, spec_metas, mass_diffs, labels = zip(*batch)
+    # Unpack 4 items
+    graphs_A, graphs_B, spec_metas, labels = zip(*batch)
     
     batch_A = collator(graphs_A)
     batch_B = collator(graphs_B)
     batch_meta = torch.cat(spec_metas, dim=0)
-    batch_mass_diffs = torch.stack(mass_diffs, 0) # [Batch, 1]
     batch_labels = torch.stack(labels, 0)
     
-    return batch_A, batch_B, batch_meta, batch_mass_diffs, batch_labels
+    return batch_A, batch_B, batch_meta, batch_labels
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Test Baseline Data Loader")
@@ -207,24 +201,20 @@ if __name__ == '__main__':
         
         # Test __getitem__
         item = ds[0]
-        if len(item) == 5:
-            g_a, g_b, meta, md, label = item
-            print(f"Success! Unpacked 5 items.")
+        if len(item) == 4:
+            g_a, g_b, meta, label = item
+            print(f"Success! Unpacked 4 items.")
             print(f"Graph object: {g_a}")
-            print(f"Graph object: {g_b}")
             print(f"Metadata: {meta}")
-            print(f"Mass Diff Value: {md.item():.4f}")
         else:
-            print(f"FAILED: Expected 5 items, got {len(item)}")
+            print(f"FAILED: Expected 4 items, got {len(item)}")
             
         # Test Collate
         loader = DataLoader(ds, batch_size=args.batch_size, collate_fn=binary_collate_fn)
         batch = next(iter(loader))
-        b_a, b_b, b_meta, b_md, b_labels = batch
+        b_a, b_b, b_meta, b_labels = batch
         print(f"Batch Graph A Shape: {b_a.keys()}")
-        print(f"Batch Graph B Shape: {b_b.keys()}")
         print(f"Batch Metadata Shape: {b_meta.shape}")
-        print(f"Batch Mass Diff Shape: {b_md.shape}")
         
     except Exception as e:
         print(f"Test Failed: {e}")

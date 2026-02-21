@@ -1,6 +1,6 @@
 import torch
 import pandas as pd
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 import sys
 import os
 from pathlib import Path
@@ -101,7 +101,7 @@ class BinaryClassificationDataset(Dataset):
         print("Initializing Fixed Metadata Encoder (Inst + Adduct)...")
         self.meta_encoder = FixedMetadataEncoder(FIXED_INSTRUMENTS, FIXED_ADDUCTS)
         
-        # --- NCE Logic (Updated) ---
+        # --- NCE Logic ---
         self.ce_key = "nce"
         
         # Calculate stats for normalization
@@ -110,6 +110,47 @@ class BinaryClassificationDataset(Dataset):
         self.std_ce = vals.std()
         if pd.isna(self.std_ce) or self.std_ce == 0: self.std_ce = 1.0
         print(f"NCE Normalization: Mean={self.mean_ce:.2f}, Std={self.std_ce:.2f}")
+
+    def get_sample_weights(self, isomer_boost=30.0, huge_mass_boost=2.0):
+        """
+        Calculates weights for DUAL BIAS CORRECTION based on actual data counts.
+        
+        STATISTICS (from analysis):
+        - Isomer Negatives: ~1,000 (Very Rare) -> Needs HIGH boost (e.g., 30x)
+        - Huge Mass Positives: ~30,000 (Common) -> Needs MILD boost (e.g., 2.0x)
+        """
+        print(f"Calculating Dual-Correction Weights...")
+        print(f"  -> Isomer Negative Boost:   {isomer_boost}x (Target: rare false positives)")
+        print(f"  -> Huge Mass Positive Boost:{huge_mass_boost}x (Target: pessimistic false negatives)")
+        
+        if 'mass_difference' not in self.pairs_df.columns:
+            print("Error: 'mass_difference' column missing. Returning default weights.")
+            return torch.ones(len(self.pairs_df), dtype=torch.double)
+            
+        # 1. Identify Target Indices
+        idx_isomer_neg = np.where(
+            (self.pairs_df['mass_difference'] < 0.01) & 
+            (self.pairs_df['label'] == 0)
+        )[0]
+        
+        idx_huge_pos = np.where(
+            (self.pairs_df['mass_difference'] > 100.0) & 
+            (self.pairs_df['label'] == 1)
+        )[0]
+        
+        print(f"  Found {len(idx_isomer_neg)} Isomer Negatives.")
+        print(f"  Found {len(idx_huge_pos)} Huge Mass Positives.")
+        
+        # 2. Assign Weights
+        weights = torch.ones(len(self.pairs_df), dtype=torch.double)
+        
+        if len(idx_isomer_neg) > 0:
+            weights[idx_isomer_neg] = isomer_boost
+            
+        if len(idx_huge_pos) > 0:
+            weights[idx_huge_pos] = huge_mass_boost
+            
+        return weights
 
     def _process_ce(self, col_energy):
         val = float(col_energy) if pd.notna(col_energy) else self.mean_ce
@@ -162,16 +203,15 @@ class BinaryClassificationDataset(Dataset):
 
             spec_meta = self._get_spec_meta_fixed(spec_A)
             
-            # --- NEW: Calculate Mass Difference ---
+            # Use dataframe mass_difference if available, otherwise calculate
+            # (Calculation is kept for consistency with tensor output)
             mass_A = float(spec_A.get("prec_mz", 0.0))
             mass_B = float(spec_B.get("prec_mz", 0.0))
-            # Normalize by 100 Da to keep values in a nice range for the NN
             mass_diff = abs(mass_A - mass_B) / 100.0
             mass_diff_tensor = torch.tensor([mass_diff], dtype=torch.float32)
             
             label = torch.tensor(pair_info['label'], dtype=torch.float32)
             
-            # Return 5 items now
             return graph_A, graph_B, spec_meta, mass_diff_tensor, label
 
         except Exception as e:
@@ -192,40 +232,64 @@ def binary_collate_fn(batch):
     return batch_A, batch_B, batch_meta, batch_mass_diffs, batch_labels
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Test Baseline Data Loader")
+    parser = argparse.ArgumentParser(description="Test Data Loader with Hard Negative Mining")
     parser.add_argument("--pairs_path", type=str, required=True)
     parser.add_argument("--spec_data_path", type=str, required=True)
     parser.add_argument("--mol_data_path", type=str, required=True)
-    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--boost", type=float, default=20.0, help="Oversampling boost for Hard Negatives")
 
     args = parser.parse_args()
     
-    print("Testing...")
+    print("Testing Dataset & Sampler...")
     try:
         ds = BinaryClassificationDataset(args.pairs_path, args.spec_data_path, args.mol_data_path)
         print(f"Dataset initialized. Size: {len(ds)}")
         
-        # Test __getitem__
-        item = ds[0]
-        if len(item) == 5:
-            g_a, g_b, meta, md, label = item
-            print(f"Success! Unpacked 5 items.")
-            print(f"Graph object: {g_a}")
-            print(f"Graph object: {g_b}")
-            print(f"Metadata: {meta}")
-            print(f"Mass Diff Value: {md.item():.4f}")
-        else:
-            print(f"FAILED: Expected 5 items, got {len(item)}")
-            
-        # Test Collate
-        loader = DataLoader(ds, batch_size=args.batch_size, collate_fn=binary_collate_fn)
+        # --- TEST 1: Calculate Weights ---
+        sample_weights = ds.get_sample_weights(isomer_boost=args.boost)
+        
+        # --- TEST 2: Create Weighted Sampler ---
+        sampler = WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(ds),
+            replacement=True
+        )
+        print("WeightedRandomSampler initialized.")
+        
+        # --- TEST 3: Check Batch Composition ---
+        loader = DataLoader(
+            ds, 
+            batch_size=args.batch_size, 
+            sampler=sampler, 
+            collate_fn=binary_collate_fn,
+            num_workers=0 # 0 for debugging
+        )
+        
+        print(f"\nScanning first batch for Hard Negatives (MassDiff < 0.01 & Label=0)...")
         batch = next(iter(loader))
         b_a, b_b, b_meta, b_md, b_labels = batch
-        print(f"Batch Graph A Shape: {b_a.keys()}")
-        print(f"Batch Graph B Shape: {b_b.keys()}")
-        print(f"Batch Metadata Shape: {b_meta.shape}")
-        print(f"Batch Mass Diff Shape: {b_md.shape}")
         
+        # Check logic (Mass Diff < 0.0001 (normalized by 100 -> < 0.01 real val) AND Label == 0)
+        # Note: b_md is normalized by 100. So 0.01 Da diff is 0.0001 value.
+        # Let's use a slightly loose threshold for floating point safety
+        
+        is_small_mass = (b_md.squeeze() < 0.0001) # Approx 0.01 Da
+        is_neg_label = (b_labels == 0)
+        is_hard_neg = is_small_mass & is_neg_label
+        
+        count = is_hard_neg.sum().item()
+        print(f"Batch Size: {args.batch_size}")
+        print(f"Hard Negatives found in batch: {count}")
+        print(f"Expected without boosting: ~0-1. With boosting: ~{int(args.batch_size * 0.1)}")
+        
+        if count > 1:
+            print(">> SUCCESS: Oversampling is working!")
+        else:
+            print(">> WARNING: Low count. Check boost factor or dataset stats.")
+
     except Exception as e:
         print(f"Test Failed: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)

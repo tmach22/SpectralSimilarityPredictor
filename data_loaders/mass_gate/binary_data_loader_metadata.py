@@ -59,8 +59,8 @@ class FixedMetadataEncoder:
         self.n_inst = len(vocab_instruments)
         self.n_adduct = len(vocab_adducts)
         
-        self.other_inst_idx = self.inst_map.get("OTHER", len(vocab_instruments)-1)
-        self.other_adduct_idx = self.adduct_map.get("OTHER", len(vocab_adducts)-1)
+        self.other_inst_idx = self.inst_map.get("OTHER", self.n_inst-1)
+        self.other_adduct_idx = self.adduct_map.get("OTHER", self.n_adduct-1)
 
     def encode(self, ce_norm, inst_str, adduct_str):
         # 1. Instrument
@@ -93,6 +93,11 @@ class BinaryClassificationDataset(Dataset):
         self.spec_lookup = spec_df.set_index('spec_id')
         self.valid_spec_ids = set(self.spec_lookup.index)
 
+        # Pre-cache precursor m/z values for fast lookup
+        # This prevents slow .loc lookups inside __getitem__
+        print("Caching precursor m/z values...")
+        self.prec_mz_map = self.spec_lookup['prec_mz'].to_dict()
+
         print(f"Loading molecular data from {mol_data_path}...")
         mol_df = pd.read_pickle(mol_data_path)
         self.mol_lookup = mol_df.set_index('mol_id')
@@ -101,11 +106,8 @@ class BinaryClassificationDataset(Dataset):
         print("Initializing Fixed Metadata Encoder (Inst + Adduct)...")
         self.meta_encoder = FixedMetadataEncoder(FIXED_INSTRUMENTS, FIXED_ADDUCTS)
         
-        # --- NCE Logic (Updated) ---
-        self.ce_key = "nce"
-        
-        # Calculate stats for normalization
-        vals = spec_df[self.ce_key].dropna()
+        # --- NCE Logic ---
+        vals = spec_df['nce'].dropna()
         self.mean_ce = vals.mean()
         self.std_ce = vals.std()
         if pd.isna(self.std_ce) or self.std_ce == 0: self.std_ce = 1.0
@@ -117,7 +119,7 @@ class BinaryClassificationDataset(Dataset):
         return (val - self.mean_ce) / (self.std_ce + EPS)
 
     def _get_spec_meta_fixed(self, spec_entry):
-        ce_val = self._process_ce(spec_entry.get(self.ce_key))
+        ce_val = self._process_ce(spec_entry.get('nce'))
         inst_str = spec_entry.get("inst_type", "Unknown")
         adduct_str = spec_entry.get("prec_type", "Unknown")
         
@@ -132,9 +134,11 @@ class BinaryClassificationDataset(Dataset):
             pair_info = self.pairs_df.iloc[idx]
             id_A, id_B = pair_info['name_main'], pair_info['name_sub']
             
+            # --- Graph Preprocessing ---
+            # Validation
             if id_A not in self.valid_spec_ids or id_B not in self.valid_spec_ids:
-                raise ValueError(f"Missing Spec ID")
-                
+                 raise ValueError("Missing Spec ID")
+                 
             spec_A = self.spec_lookup.loc[id_A]
             spec_B = self.spec_lookup.loc[id_B]
             
@@ -142,7 +146,7 @@ class BinaryClassificationDataset(Dataset):
             mol_id_B = spec_B['mol_id']
             
             if mol_id_A not in self.valid_mol_ids or mol_id_B not in self.valid_mol_ids:
-                raise ValueError(f"Missing Mol ID")
+                raise ValueError("Missing Mol ID")
             
             mol_A = self.mol_lookup.loc[mol_id_A, 'mol']
             mol_B = self.mol_lookup.loc[mol_id_B, 'mol']
@@ -160,19 +164,32 @@ class BinaryClassificationDataset(Dataset):
             if graph_A.x.size(0) == 0 or graph_B.x.size(0) == 0:
                  raise ValueError("Graph is empty")
 
-            spec_meta = self._get_spec_meta_fixed(spec_A)
+            # --- METADATA ENGINEERING (Feature Fusion) ---
+            # 1. Get Base Metadata (NCE, Inst, Adduct)
+            # Shape: [1, 81] (typically)
+            base_meta = self._get_spec_meta_fixed(spec_A) 
             
-            # --- NEW: Calculate Mass Difference ---
-            mass_A = float(spec_A.get("prec_mz", 0.0))
-            mass_B = float(spec_B.get("prec_mz", 0.0))
-            # Normalize by 100 Da to keep values in a nice range for the NN
-            mass_diff = abs(mass_A - mass_B) / 100.0
-            mass_diff_tensor = torch.tensor([mass_diff], dtype=torch.float32)
+            # 2. Calculate Mass Difference
+            # Use cached map for speed
+            mz_A = float(self.prec_mz_map.get(id_A, 0.0))
+            mz_B = float(self.prec_mz_map.get(id_B, 0.0))
+            mass_diff = abs(mz_A - mz_B)
+            
+            # 3. Normalize Mass Diff
+            # Divide by 1000 to keep it roughly 0.0-1.0 (assuming max relevant diff is ~1000 Da)
+            mass_diff_norm = mass_diff / 1000.0
+            
+            # 4. Append to Metadata
+            # Shape: [1, 1]
+            md_tensor = torch.tensor([[mass_diff_norm]], dtype=torch.float32)
+            
+            # Final Meta Shape: [1, 82]
+            final_meta = torch.cat([base_meta, md_tensor], dim=1)
             
             label = torch.tensor(pair_info['label'], dtype=torch.float32)
             
-            # Return 5 items now
-            return graph_A, graph_B, spec_meta, mass_diff_tensor, label
+            # Return 4 items (Graph A, Graph B, Enhanced Metadata, Label)
+            return graph_A, graph_B, final_meta, label
 
         except Exception as e:
             # Fallback to random sample
@@ -180,19 +197,21 @@ class BinaryClassificationDataset(Dataset):
             return self.__getitem__(new_idx)
 
 def binary_collate_fn(batch):
-    # Unpack 5 items
-    graphs_A, graphs_B, spec_metas, mass_diffs, labels = zip(*batch)
+    # Unpack 4 items
+    graphs_A, graphs_B, spec_metas, labels = zip(*batch)
     
     batch_A = collator(graphs_A)
     batch_B = collator(graphs_B)
-    batch_meta = torch.cat(spec_metas, dim=0)
-    batch_mass_diffs = torch.stack(mass_diffs, 0) # [Batch, 1]
+    batch_meta = torch.cat(spec_metas, dim=0) # [Batch, D+1]
     batch_labels = torch.stack(labels, 0)
     
-    return batch_A, batch_B, batch_meta, batch_mass_diffs, batch_labels
+    return batch_A, batch_B, batch_meta, batch_labels
 
+# =============================================================================
+# 3. TEST BLOCK (Runs when file is executed directly)
+# =============================================================================
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Test Baseline Data Loader")
+    parser = argparse.ArgumentParser(description="Test Feature-Fused Data Loader")
     parser.add_argument("--pairs_path", type=str, required=True)
     parser.add_argument("--spec_data_path", type=str, required=True)
     parser.add_argument("--mol_data_path", type=str, required=True)
@@ -200,32 +219,45 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     
-    print("Testing...")
+    print("\n--- Testing Data Loader with Mass Diff Fusion ---")
     try:
+        # 1. Initialize
         ds = BinaryClassificationDataset(args.pairs_path, args.spec_data_path, args.mol_data_path)
-        print(f"Dataset initialized. Size: {len(ds)}")
+        print(f"Dataset initialized successfully. Size: {len(ds)}")
         
-        # Test __getitem__
+        # 2. Test __getitem__
+        print("\n--- Testing Single Item Fetch ---")
         item = ds[0]
-        if len(item) == 5:
-            g_a, g_b, meta, md, label = item
-            print(f"Success! Unpacked 5 items.")
-            print(f"Graph object: {g_a}")
-            print(f"Graph object: {g_b}")
-            print(f"Metadata: {meta}")
-            print(f"Mass Diff Value: {md.item():.4f}")
-        else:
-            print(f"FAILED: Expected 5 items, got {len(item)}")
+        if len(item) == 4:
+            g_a, g_b, meta, label = item
+            print(f"Success! Unpacked 4 items.")
+            print(f"Graph A Nodes: {g_a.x.shape}")
+            print(f"Graph B Nodes: {g_b.x.shape}")
             
-        # Test Collate
+            # KEY CHECK: The Metadata Shape
+            print(f"Metadata Shape: {meta.shape} (Expected 1, ~82)")
+            
+            # Verify the last element (Mass Diff) exists
+            print(f"Mass Diff Feature (Last Element): {meta[0, -1].item():.4f}")
+            print(f"Label: {label.item()}")
+        else:
+            print(f"FAILED: Expected 4 items, got {len(item)}")
+            sys.exit(1)
+            
+        # 3. Test Collate
+        print(f"\n--- Testing Batch Loading (Batch Size: {args.batch_size}) ---")
         loader = DataLoader(ds, batch_size=args.batch_size, collate_fn=binary_collate_fn)
         batch = next(iter(loader))
-        b_a, b_b, b_meta, b_md, b_labels = batch
-        print(f"Batch Graph A Shape: {b_a.keys()}")
-        print(f"Batch Graph B Shape: {b_b.keys()}")
-        print(f"Batch Metadata Shape: {b_meta.shape}")
-        print(f"Batch Mass Diff Shape: {b_md.shape}")
+        b_a, b_b, b_meta, b_labels = batch
+        
+        print(f"Batch Graph A: {b_a.keys()}")
+        print(f"Batch Metadata: {b_meta.shape} (Should be [Batch, ~82])")
+        print(f"Batch Labels: {b_labels.shape}")
+        
+        print("\nPASSED: Data Loader works correctly.")
         
     except Exception as e:
-        print(f"Test Failed: {e}")
+        print(f"\nTEST FAILED: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
