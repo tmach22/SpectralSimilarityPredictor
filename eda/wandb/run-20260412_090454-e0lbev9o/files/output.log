@@ -1,0 +1,422 @@
+[*] Loading Model Configurations...
+[*] Initializing DESAF-Net Architecture...
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from trained_model/desaf_phase1/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/2307854986.py:148: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/1485360926.py:148: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/data_loaders/fiar/data_loader.py:31: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  self.graphs = torch.load(processed_graphs_path)
+[+] Loaded 260706 graphs.
+
+[*] Hunting for a molecule with cleavage events...
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/1775628392.py:151: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Hunting for a molecule with cleavage events...
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/2971665033.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/data_loaders/fiar/data_loader.py:31: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  self.graphs = torch.load(processed_graphs_path)
+[+] Loaded 260706 graphs.
+
+[*] Hunting for a molecule with cleavage events...
+
+[*] Visualizing Inference for Graph Index 0
+[*] SMILES: Cc1cc2c(s1)Nc1ccccc1N=C2N1CCN(C)CC1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/3923246915.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Hunting for a molecule with cleavage events...
+
+[*] Visualizing Inference for Graph Index 0
+[*] SMILES: Cc1cc2c(s1)Nc1ccccc1N=C2N1CCN(C)CC1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/1620516442.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Hunting for a molecule with cleavage events...
+
+[*] Visualizing Inference for Graph Index 1
+[*] SMILES: Cc1cc2c(s1)Nc1ccccc1N=C2N1CCN(C)CC1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/3676854162.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Hunting for a molecule with cleavage events...
+
+[*] Visualizing Inference for Graph Index 4
+[*] SMILES: Cc1cc2c(s1)Nc1ccccc1N=C2N1CCN(C)CC1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/3676854162.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Hunting for a molecule with cleavage events...
+
+[*] Visualizing Inference for Graph Index 4
+[*] SMILES: Cc1cc2c(s1)Nc1ccccc1N=C2N1CCN(C)CC1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/1622996828.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119]
+
+[*] Visualizing Inference for Graph Index 72
+[*] SMILES: CCCCC(C)C(OC(=O)CC(CC(=O)O)C(=O)O)C(CC(C)CC(O)CCCCCCC(O)C(C)N)OC(=O)CC(CC(=O)O)C(=O)O
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/501327426.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119]
+
+[*] Visualizing Inference for Graph Index 0
+[*] SMILES: Cc1cc2c(s1)Nc1ccccc1N=C2N1CCN(C)CC1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/3014559207.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119]
+
+[*] Visualizing Inference for Graph Index 96
+[*] SMILES: CC1OC(OC2C(O)C(OCCc3ccc(O)c(O)c3)OC(CO)C2OC(=O)C=Cc2ccc(O)c(O)c2)C(O)C(O)C1O
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/2984841472.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119]
+
+[*] Visualizing Inference for Graph Index 116
+[*] SMILES: C(CC=Nc1ccccc1)=Nc1ccccc1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/2231627352.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119]
+
+[*] Visualizing Inference for Graph Index 119
+[*] SMILES: C#CC1(O)C(CO)OC(n2ccc(N)nc2=O)C1O
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/2984841472.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119]
+
+[*] Visualizing Inference for Graph Index 116
+[*] SMILES: C(CC=Nc1ccccc1)=Nc1ccccc1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/3704209118.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119, 128, 143, 181, 209, 228]
+
+[*] Visualizing Inference for Graph Index 116
+[*] SMILES: C(CC=Nc1ccccc1)=Nc1ccccc1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/2350130041.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119, 128, 143, 181, 209, 228]
+
+[*] Visualizing Inference for Graph Index 119
+[*] SMILES: C#CC1(O)C(CO)OC(n2ccc(N)nc2=O)C1O
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/636104411.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119, 128, 143, 181, 209, 228]
+
+[*] Visualizing Inference for Graph Index 128
+[*] SMILES: CCc1nn(C)c(C(=O)NCc2ccc(C(C)(C)C)cc2)c1Cl
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/636104411.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119, 128, 143, 181, 209, 228]
+
+[*] Visualizing Inference for Graph Index 128
+[*] SMILES: CCc1nn(C)c(C(=O)NCc2ccc(C(C)(C)C)cc2)c1Cl
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/798070517.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119, 128, 143, 181, 209, 228]
+
+[*] Visualizing Inference for Graph Index 143
+[*] SMILES: CNC(=O)Oc1cc(C)c([S+](C)[O-])c(C)c1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/1643302028.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119, 128, 143, 181, 209, 228]
+
+[*] Visualizing Inference for Graph Index 181
+[*] SMILES: CC(=O)c1c(O)c(C)c(O)c2c1OC1=CC(=O)C(C(C)=NCC(=O)N3CCc4ccccc4C3)C(=O)C12C
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/845662428.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119, 128, 143, 181, 209, 228]
+
+[*] Visualizing Inference for Graph Index 209
+[*] SMILES: CCC(C)C1NC(=O)C(C(C)CC)NC1=O
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/4211004012.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119, 128, 143, 181, 209, 228]
+
+[*] Visualizing Inference for Graph Index 228
+[*] SMILES: Cn1ncc2c(NCCO)nc(Nc3ccc(F)c(F)c3)nc21
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/1164961432.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119, 128, 143, 181, 209, 228]
+
+[*] Visualizing Inference for Graph Index 72
+[*] SMILES: CCCCC(C)C(OC(=O)CC(CC(=O)O)C(=O)O)C(CC(C)CC(O)CCCCCCC(O)C(C)N)OC(=O)CC(CC(=O)O)C(=O)O
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/4027402932.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/data_loaders/fiar/data_loader.py:31: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  self.graphs = torch.load(processed_graphs_path)
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119, 128, 143, 181, 209, 228]
+
+[*] Visualizing Inference for Graph Index 0
+[*] SMILES: Cc1cc2c(s1)Nc1ccccc1N=C2N1CCN(C)CC1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 72
+[*] SMILES: CCCCC(C)C(OC(=O)CC(CC(=O)O)C(=O)O)C(CC(C)CC(O)CCCCCCC(O)C(C)N)OC(=O)CC(CC(=O)O)C(=O)O
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 96
+[*] SMILES: CC1OC(OC2C(O)C(OCCc3ccc(O)c(O)c3)OC(CO)C2OC(=O)C=Cc2ccc(O)c(O)c2)C(O)C(O)C1O
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 116
+[*] SMILES: C(CC=Nc1ccccc1)=Nc1ccccc1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 119
+[*] SMILES: C#CC1(O)C(CO)OC(n2ccc(N)nc2=O)C1O
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 128
+[*] SMILES: CCc1nn(C)c(C(=O)NCc2ccc(C(C)(C)C)cc2)c1Cl
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 143
+[*] SMILES: CNC(=O)Oc1cc(C)c([S+](C)[O-])c(C)c1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 181
+[*] SMILES: CC(=O)c1c(O)c(C)c(O)c2c1OC1=CC(=O)C(C(C)=NCC(=O)N3CCc4ccccc4C3)C(=O)C12C
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 209
+[*] SMILES: CCC(C)C1NC(=O)C(C(C)CC)NC1=O
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 228
+[*] SMILES: Cn1ncc2c(NCCO)nc(Nc3ccc(F)c(F)c3)nc21
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+[*] Loading merged configurations and initializing DESAF-Net Architecture...
+[*] Loading trained Phase 1 weights from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/trained_model/fiar/desaf_phase1_best.pt...
+/tmp/ipykernel_4007467/4027402932.py:152: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(WEIGHTS_PATH, map_location=device)
+[*] Loading dataset from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt...
+[*] Loading pre-computed Phase 1 graphs from /data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase1_graphs.pt into RAM...
+[+] Loaded 260706 graphs.
+
+[*] Scanning for structurally unique molecules...
+
+[+] Found 5 unique molecule indices: [0, 72, 96, 116, 119, 128, 143, 181, 209, 228]
+
+[*] Visualizing Inference for Graph Index 0
+[*] SMILES: Cc1cc2c(s1)Nc1ccccc1N=C2N1CCN(C)CC1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 72
+[*] SMILES: CCCCC(C)C(OC(=O)CC(CC(=O)O)C(=O)O)C(CC(C)CC(O)CCCCCCC(O)C(C)N)OC(=O)CC(CC(=O)O)C(=O)O
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 96
+[*] SMILES: CC1OC(OC2C(O)C(OCCc3ccc(O)c(O)c3)OC(CO)C2OC(=O)C=Cc2ccc(O)c(O)c2)C(O)C(O)C1O
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 116
+[*] SMILES: C(CC=Nc1ccccc1)=Nc1ccccc1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 119
+[*] SMILES: C#CC1(O)C(CO)OC(n2ccc(N)nc2=O)C1O
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 128
+[*] SMILES: CCc1nn(C)c(C(=O)NCc2ccc(C(C)(C)C)cc2)c1Cl
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 143
+[*] SMILES: CNC(=O)Oc1cc(C)c([S+](C)[O-])c(C)c1
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 181
+[*] SMILES: CC(=O)c1c(O)c(C)c(O)c2c1OC1=CC(=O)C(C(C)=NCC(=O)N3CCc4ccccc4C3)C(=O)C12C
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 209
+[*] SMILES: CCC(C)C1NC(=O)C(C(C)CC)NC1=O
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut
+
+[*] Visualizing Inference for Graph Index 228
+[*] SMILES: Cn1ncc2c(NCCO)nc(Nc3ccc(F)c(F)c3)nc21
+[*] Color Key: GREEN = True Cut | RED = Hallucinated Cut | ORANGE = Missed Cut

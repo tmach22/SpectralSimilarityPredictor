@@ -1,0 +1,47 @@
+{
+  "os": "Linux-6.8.0-100-generic-x86_64-with-glibc2.10",
+  "python": "CPython 3.8.19",
+  "startedAt": "2026-04-12T16:04:54.507768Z",
+  "program": "/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/eda/visualize_ground_truth.ipynb",
+  "codePath": "/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/eda/visualize_ground_truth.ipynb",
+  "codePathLocal": "visualize_ground_truth.ipynb",
+  "git": {
+    "remote": "git@github.com:tmach22/SpectralSimilarityPredictor.git",
+    "commit": "df692bee6ed7bea0adef4c2c237519f8cd0555b2"
+  },
+  "email": "tmach007@ucr.edu",
+  "root": "/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/eda",
+  "host": "yuzu",
+  "executable": "/data/nas-gpu/wang/tmach007/massformer/y/envs/MF-GPU/bin/python",
+  "cpu_count": 16,
+  "cpu_count_logical": 32,
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "gpu_count": 2,
+  "disk": {
+    "/": {
+      "total": "982820896768",
+      "used": "391118725120"
+    }
+  },
+  "memory": {
+    "total": "134777995264"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 4090",
+      "memoryTotal": "25757220864",
+      "cudaCores": 16384,
+      "architecture": "Ada",
+      "uuid": "GPU-9e863d1a-be80-bc45-49bd-8e3ad232a81f"
+    },
+    {
+      "name": "NVIDIA GeForce RTX 4090",
+      "memoryTotal": "25757220864",
+      "cudaCores": 16384,
+      "architecture": "Ada",
+      "uuid": "GPU-5d339a9a-7f72-7b84-e03d-ce3e1e5cbb0d"
+    }
+  ],
+  "cudaVersion": "12.4",
+  "writerId": "6vdfyth614ury8p0h5p9fmd1rf6ht6iw"
+}
