@@ -1,13 +1,18 @@
 import pandas as pd
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch_geometric.data import Data
+import torch_geometric.transforms as T
 from rdkit import Chem
 from rdkit.Chem import rdMolDescriptors
 import multiprocessing as mp
 from tqdm import tqdm
 import os
 import itertools
+import warnings
+
+warnings.filterwarnings("ignore", message=".*scipy.sparse.*")
 
 # ==========================================
 # 1. BDE HEURISTIC CONSTANTS
@@ -136,17 +141,12 @@ def generate_cleavage_labels(mol, spectrum_mz_array, mass_tolerance=0.01):
     return labels
 
 # ==========================================
-# 3. [NEW] SPECTRAL PEAK PADDING
+# 3. SPECTRAL PEAK PADDING
 # ==========================================
 def _process_peaks_to_lists(peaks_list, prec_mz, max_peaks=60, parent_intensity=1.1):
-    """
-    Pads peaks and returns standard Python lists (not tensors) 
-    to prevent multiprocessing memory leaks.
-    """
     if not isinstance(peaks_list, list) or len(peaks_list) == 0:
         return [[0.0, 0.0, 0.0, 0.0]] * max_peaks, [True] * max_peaks
         
-    # Sort by intensity (highest first) and take top (max_peaks - 1)
     peaks_list = sorted(peaks_list, key=lambda x: x[1], reverse=True)[:max_peaks - 1]
     
     peak_features = []
@@ -155,7 +155,6 @@ def _process_peaks_to_lists(peaks_list, prec_mz, max_peaks=60, parent_intensity=
         relative_mz = mz / prec_mz if prec_mz > 0 else 0.0
         peak_features.append([mz / 1000.0, float(intensity), neutral_loss / 1000.0, relative_mz])
         
-    # Always append the precursor peak
     peak_features.append([prec_mz / 1000.0, parent_intensity, 0.0, 1.0])
     
     pad_length = max_peaks - len(peak_features)
@@ -172,45 +171,68 @@ def _process_peaks_to_lists(peaks_list, prec_mz, max_peaks=60, parent_intensity=
 # ==========================================
 def process_molecule_row(row):
     smiles = row['smiles']
-    
+    spec_id = row['spec_id'] 
     raw_peaks = row['peaks']
     prec_mz = float(row.get('prec_mz', 0.0))
     ce = row.get('collision_energy', 35.0) 
     
-    # [UPDATED] Process and pad the peaks here
     padded_peaks, peak_mask = _process_peaks_to_lists(raw_peaks, prec_mz)
-    
     peaks_array = np.array(raw_peaks) 
+    
     mol = Chem.MolFromSmiles(smiles)
     if mol is None: return None
         
+    # --- NODE FEATURE EXTRACTION (1-WL BYPASS) ---
+    node_features = []
+    for atom in mol.GetAtoms():
+        atomic_num = atom.GetAtomicNum() + 1  
+        degree = atom.GetDegree()
+        formal_charge = atom.GetFormalCharge()
+        hybridization = int(atom.GetHybridization())
+        num_hs = atom.GetTotalNumHs() + 2050 
+        
+        is_in_ring = 1.0 if atom.IsInRing() else 0.0
+        is_aromatic = 1.0 if atom.GetIsAromatic() else 0.0
+
+        features = [atomic_num, degree, formal_charge, hybridization, num_hs, is_in_ring, is_aromatic]
+        node_features.append(features)
+
+    # --- EDGE EXTRACTION ---
     bde_dict = predict_bdes_for_molecule(mol)
     mz_array = peaks_array[:, 0] if len(peaks_array) > 0 else np.array([])
     cleavage_dict = generate_cleavage_labels(mol, mz_array)
     
-    edge_index, edge_attr_bde, edge_label_cleavage = [], [], []
+    edge_index, edge_attr_bde, edge_label_cleavage, edge_attr_physics = [], [], [], []
     
     for bond in mol.GetBonds():
         u = bond.GetBeginAtomIdx()
         v = bond.GetEndAtomIdx()
         bond_idx = bond.GetIdx()
         
+        # Physical features for MassFormer
+        bond_type = bond.GetBondTypeAsDouble()
+        is_conjugated = 1.0 if bond.GetIsConjugated() else 0.0
+        
         for src, dst in [(u, v), (v, u)]:
             edge_index.append([src, dst])
             edge_attr_bde.append([bde_dict[bond_idx], ce])
             edge_label_cleavage.append(cleavage_dict[bond_idx])
+            edge_attr_physics.append([bond_type, is_conjugated])
             
     if not edge_index: return None 
 
-    # [UPDATED] Return the peaks in the dictionary
     return {
+        'spec_id': spec_id, 
+        'x': node_features,
         'edge_index': edge_index,
         'edge_attr': edge_attr_bde,
+        'edge_attr_physics': edge_attr_physics,
         'y_cleavage': edge_label_cleavage,
         'num_nodes': mol.GetNumAtoms(),
         'smiles': smiles,
         'peaks': padded_peaks,
-        'peak_mask': peak_mask
+        'peak_mask': peak_mask,
+        'collision_energy': ce
     }
 
 # ==========================================
@@ -220,8 +242,7 @@ if __name__ == '__main__':
     spec_df_path = "/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/spec_df_COMBINED.pkl"
     mol_df_path = "/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/mol_df_COMBINED.pkl"
     
-    # [UPDATED] Save as phase2_graphs.pt so we don't overwrite Phase 1
-    output_path = "/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase2_graphs.pt"
+    output_path = "/data/nas-gpu/wang/tmach007/SpectralSimilarityPredictor/mass_spec_gym_data/phase3_graphs_lpe.pt"
 
     print("[*] Loading DataFrames...")
     spec_df = pd.read_pickle(spec_df_path)
@@ -236,25 +257,51 @@ if __name__ == '__main__':
     with mp.Pool(num_cores) as pool:
         raw_results = list(tqdm(pool.imap(process_molecule_row, rows), total=len(rows)))
         
-    print(f"[*] Multiprocessing complete. Assembling PyTorch tensors...")
+    print(f"[*] Multiprocessing complete. Assembling PyTorch tensors with LPE...")
+    
+    # Initialize the Laplacian Positional Encoding transform
+    lpe_transform = T.AddLaplacianEigenvectorPE(k=8, attr_name='pe', is_undirected=True)
     
     valid_graphs = []
     
     for res in tqdm(raw_results, desc="Building PyG Graphs"):
         if res is not None:
             graph = Data(
+                spec_id=res['spec_id'], 
+                x=torch.tensor(res['x'], dtype=torch.float),
                 edge_index=torch.tensor(res['edge_index'], dtype=torch.long).t().contiguous(),
                 edge_attr=torch.tensor(res['edge_attr'], dtype=torch.float),
+                edge_attr_physics=torch.tensor(res['edge_attr_physics'], dtype=torch.float),
                 y_cleavage=torch.tensor(res['y_cleavage'], dtype=torch.float),
                 num_nodes=res['num_nodes'],
                 smiles=res['smiles'],
-                # [UPDATED] Attach the peak tensors to the graph object
+                collision_energy=torch.tensor([res['collision_energy']], dtype=torch.float),
                 peaks=torch.tensor(res['peaks'], dtype=torch.float32),
                 peak_mask=torch.tensor(res['peak_mask'], dtype=torch.bool)
             )
+            
+            # [CRITICAL FIX] Only calculate LPE for molecules large enough to support k=8
+            if graph.num_nodes > 8:
+                try:
+                    graph = lpe_transform(graph)
+                except Exception:
+                    # Catch rare cases where the Laplacian fails to converge on disconnected subgraphs
+                    pass
+            
+            # Safety Guard: Pad small molecules or failed transforms with zeros
+            if hasattr(graph, 'pe'):
+                curr_k = graph.pe.shape[1]
+                if curr_k < 8:
+                    graph.pe = F.pad(graph.pe, (0, 8 - curr_k), "constant", 0)
+                # Ensure PyG didn't somehow return more than 8
+                elif curr_k > 8:
+                    graph.pe = graph.pe[:, :8]
+            else:
+                graph.pe = torch.zeros((graph.num_nodes, 8), dtype=torch.float)
+
             valid_graphs.append(graph)
     
     print(f"[*] Successfully processed {len(valid_graphs)}/{len(rows)} valid graphs.")
     print(f"[*] Saving massive graph dataset to {output_path}...")
     torch.save(valid_graphs, output_path)
-    print("[+] Done! You are ready for Phase 2 REINFORCE Training.")
+    print("[+] Done! The dataset is now fully prepared with LPEs for Phase 2.5.")
