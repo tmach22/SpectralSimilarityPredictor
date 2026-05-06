@@ -193,9 +193,15 @@ class DESAFNet(nn.Module):
 # THE RL REWARD ENVIRONMENT
 # ==============================================================================
 def calculate_cosine_reward(theoretical_mzs, fragment_batch_idx, batched_peaks, batched_masks, tolerance=0.05):
-    """Calculates Spectral Cosine Similarity as the REINFORCE Reward."""
+    """
+    Calculates Spectral Cosine Similarity with Oracle Partial Credit 
+    to prevent Joint-Action Gradient Starvation.
+    """
+    import math
     B = batched_peaks.shape[0]
     rewards = torch.zeros(B, device=theoretical_mzs.device)
+    
+    H_MASS = 1.007825
     
     for b in range(B):
         frag_mzs = theoretical_mzs[fragment_batch_idx == b]
@@ -220,9 +226,25 @@ def calculate_cosine_reward(theoretical_mzs, fragment_batch_idx, batched_peaks, 
         exp_ints[max_mz_idx] = 0.0 
             
         diffs = torch.abs(frag_mzs.unsqueeze(1) - exp_mzs.unsqueeze(0))
-        hits = (diffs <= tolerance)
         
-        claimed_intensities = exp_ints * hits.max(dim=0).values 
+        # ========================================================
+        # [NEW] ORACLE WEIGHTING (Partial Credit for Router Mistakes)
+        # ========================================================
+        hits_exact = (diffs <= tolerance)
+        hits_1h = (torch.abs(diffs - H_MASS) <= tolerance) | (torch.abs(diffs + H_MASS) <= tolerance)
+        hits_2h = (torch.abs(diffs - 2*H_MASS) <= tolerance) | (torch.abs(diffs + 2*H_MASS) <= tolerance)
+        
+        # Build the weight matrix
+        weight_matrix = torch.zeros_like(diffs)
+        weight_matrix[hits_2h] = 0.4
+        weight_matrix[hits_1h] = 0.7
+        weight_matrix[hits_exact] = 1.0
+        
+        # Each empirical peak claims the highest weight from any matching fragment
+        best_weights = weight_matrix.max(dim=0).values
+        claimed_intensities = exp_ints * best_weights 
+        
+        # Calculate Cosine Similarity based on weighted intensities
         dot_product = torch.sum(claimed_intensities * exp_ints)
         norm_claimed = torch.sqrt(torch.sum(claimed_intensities ** 2)) + 1e-8
         norm_exp = torch.sqrt(torch.sum(exp_ints ** 2)) + 1e-8
@@ -230,12 +252,11 @@ def calculate_cosine_reward(theoretical_mzs, fragment_batch_idx, batched_peaks, 
         base_reward = dot_product / (norm_claimed * norm_exp)
         
         # ========================================================
-        # [NEW] THE PARSIMONY PENALTY
-        # Crushes the reward if the network abuses the Alphabet Soup exploit.
+        # THE PARSIMONY PENALTY
         # ========================================================
         optimal_frags = 5.0
         if num_frags > optimal_frags:
-            # Steep exponential decay (10 frags yields ~90% reward reduction)
+            # math.exp used to prevent Tensor type errors
             penalty_factor = math.exp(-0.45 * (num_frags - optimal_frags))
             rewards[b] = base_reward * penalty_factor
         else:
